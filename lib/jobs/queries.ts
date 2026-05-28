@@ -1,6 +1,7 @@
-import { desc, ilike, inArray, or, sql } from "drizzle-orm";
+import { desc, eq, ilike, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { getCurrentUser } from "../auth";
 import { db } from "../db/client";
-import { job, type Job as DbJob } from "../db/schema";
+import { job, profile, type Job as DbJob } from "../db/schema";
 
 export type MatchedJob = {
   id: string;
@@ -80,7 +81,21 @@ function computeScore(
   return Math.min(95, Math.round(55 + ratio * 40));
 }
 
-function dbRowToMatchedJob(row: DbJob, roleKeywords: string[]): MatchedJob {
+function dbRowToMatchedJob(
+  row: DbJob,
+  roleKeywords: string[],
+  similarity: number | null,
+): MatchedJob {
+  // If we have a real cosine similarity, map [0, 1] → [50, 99].
+  // text-embedding-3-small JD-vs-resume similarities cluster around 0.3–0.7,
+  // so we stretch that band to span the score range.
+  let score: number;
+  if (similarity != null) {
+    const clamped = Math.max(0, Math.min(1, (similarity - 0.2) / 0.6));
+    score = Math.round(50 + clamped * 49);
+  } else {
+    score = computeScore(row.title, row.jdText, roleKeywords);
+  }
   return {
     id: row.id,
     source: row.source,
@@ -88,7 +103,7 @@ function dbRowToMatchedJob(row: DbJob, roleKeywords: string[]): MatchedJob {
     role: row.title,
     location: row.location ?? "Location not listed",
     salary: formatSalary(row.salaryMin, row.salaryMax),
-    score: computeScore(row.title, row.jdText, roleKeywords),
+    score,
     posted: formatPosted(row.postedAt),
     summary: extractSummary(row.jdText),
     jdBullets: extractBullets(row.jdText),
@@ -97,9 +112,11 @@ function dbRowToMatchedJob(row: DbJob, roleKeywords: string[]): MatchedJob {
 }
 
 export async function findMatchingJobs(q: JobsQuery): Promise<MatchedJob[]> {
-  const conds = [] as ReturnType<typeof ilike>[];
+  // Always filter out disappeared jobs.
+  const conds: ReturnType<typeof ilike>[] = [
+    sql`${job.isActive} = true` as ReturnType<typeof ilike>,
+  ];
 
-  // Roles: any keyword appears in title
   if (q.roles && q.roles.length > 0) {
     const roleConds = q.roles
       .filter((r) => r.trim().length > 1)
@@ -110,7 +127,6 @@ export async function findMatchingJobs(q: JobsQuery): Promise<MatchedJob[]> {
     }
   }
 
-  // Locations: any keyword appears in location
   if (q.locations && q.locations.length > 0) {
     const locConds = q.locations
       .filter((l) => l.trim().length > 1)
@@ -121,8 +137,6 @@ export async function findMatchingJobs(q: JobsQuery): Promise<MatchedJob[]> {
     }
   }
 
-  // Salary: salary_max >= salaryMin (we only keep jobs that could pay at least this much)
-  // Only filter if salary is actually listed; jobs with null salary still match.
   if (q.salaryMin != null) {
     conds.push(
       sql`(${job.salaryMax} IS NULL OR ${job.salaryMax} >= ${q.salaryMin})` as ReturnType<
@@ -132,6 +146,46 @@ export async function findMatchingJobs(q: JobsQuery): Promise<MatchedJob[]> {
   }
 
   const limit = q.limit ?? 50;
+
+  // Try to fetch the current user's resume embedding. If we have it, we can
+  // do real semantic similarity ranking via pgvector cosine distance.
+  let resumeEmbedding: number[] | null = null;
+  try {
+    const user = await getCurrentUser();
+    if (user) {
+      const [p] = await db
+        .select({ embedding: profile.resumeEmbedding })
+        .from(profile)
+        .where(eq(profile.userId, user.id))
+        .limit(1);
+      resumeEmbedding = p?.embedding ?? null;
+    }
+  } catch {
+    // Anonymous query / no profile yet — fall through to keyword scoring
+  }
+
+  if (resumeEmbedding) {
+    // Format vector as pgvector string literal: [1,2,3,…]
+    const vecLiteral = `[${resumeEmbedding.join(",")}]`;
+    const baseConds = [isNotNull(job.jdEmbedding), ...conds];
+    const rows = await db
+      .select({
+        row: job,
+        similarity: sql<number>`1 - (${job.jdEmbedding} <=> ${vecLiteral}::vector)`.as(
+          "similarity",
+        ),
+      })
+      .from(job)
+      .where(sql.join(baseConds, sql` AND `))
+      .orderBy(sql`${job.jdEmbedding} <=> ${vecLiteral}::vector`)
+      .limit(limit);
+
+    return rows.map(({ row, similarity }) =>
+      dbRowToMatchedJob(row, q.roles ?? [], Number(similarity)),
+    );
+  }
+
+  // Fallback: keyword heuristic + recency order
   const rows =
     conds.length > 0
       ? await db
@@ -142,7 +196,7 @@ export async function findMatchingJobs(q: JobsQuery): Promise<MatchedJob[]> {
           .limit(limit)
       : await db.select().from(job).orderBy(desc(job.postedAt)).limit(limit);
 
-  const matched = rows.map((r) => dbRowToMatchedJob(r, q.roles ?? []));
+  const matched = rows.map((r) => dbRowToMatchedJob(r, q.roles ?? [], null));
   matched.sort((a, b) => b.score - a.score);
   return matched;
 }
@@ -154,7 +208,7 @@ export async function getJobById(id: string): Promise<MatchedJob | null> {
     .where(inArray(job.id, [id]))
     .limit(1);
   if (!row) return null;
-  return dbRowToMatchedJob(row, []);
+  return dbRowToMatchedJob(row, [], null);
 }
 
 export async function countJobs(): Promise<number> {

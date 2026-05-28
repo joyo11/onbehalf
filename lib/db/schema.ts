@@ -120,6 +120,7 @@ export const profile = pgTable("profile", {
 
   voiceSample: text("voice_sample"),
   tailoringEnabled: boolean("tailoring_enabled").notNull().default(true),
+  resumeEmbedding: vector("resume_embedding"),
 
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -172,6 +173,7 @@ export const job = pgTable(
 
     jdEmbedding: vector("jd_embedding"),
 
+    isActive: boolean("is_active").notNull().default(true),
     scrapedAt: timestamp("scraped_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

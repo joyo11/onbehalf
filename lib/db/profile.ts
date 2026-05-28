@@ -1,7 +1,26 @@
 import { eq } from "drizzle-orm";
+import { embedOne } from "../embeddings";
 import type { ParsedResume } from "../types";
 import { db } from "./client";
 import { profile, resumeSection, type User } from "./schema";
+
+function resumeToText(parsed: ParsedResume): string {
+  const parts: string[] = [];
+  if (parsed.contact.name) parts.push(parsed.contact.name);
+  if (parsed.summary) parts.push(parsed.summary);
+  for (const s of parsed.sections) {
+    const header = [s.title, s.organization, s.start_date, s.end_date]
+      .filter(Boolean)
+      .join(" · ");
+    parts.push(`${s.type.toUpperCase()}: ${header}`);
+    for (const b of s.bullets) parts.push(`- ${b}`);
+    if (s.tags.length > 0) parts.push(`Tags: ${s.tags.join(", ")}`);
+  }
+  if (parsed.skills.length > 0) {
+    parts.push(`Skills: ${parsed.skills.map((s) => s.skill).join(", ")}`);
+  }
+  return parts.join("\n");
+}
 
 /**
  * Get the user's profile row, creating one if it doesn't exist.
@@ -26,6 +45,15 @@ export async function saveParsedResume(user: User, parsed: ParsedResume) {
   const existing = await getOrCreateProfile(user);
   const c = parsed.contact;
 
+  // Compute one aggregate embedding for the whole resume. Best-effort —
+  // failures here shouldn't break the parse flow.
+  let resumeEmbedding: number[] | null = null;
+  try {
+    resumeEmbedding = await embedOne(resumeToText(parsed));
+  } catch (e) {
+    console.error("resume embedding failed:", e);
+  }
+
   // Only fill profile fields that are currently empty — never overwrite
   // values the user typed in onboarding.
   await db
@@ -41,6 +69,7 @@ export async function saveParsedResume(user: User, parsed: ParsedResume) {
         parsed.skills.length > 0
           ? Object.fromEntries(parsed.skills.map((s) => [s.skill, s.years ?? null]))
           : existing.skillYears,
+      resumeEmbedding: resumeEmbedding ?? existing.resumeEmbedding,
       updatedAt: new Date(),
     })
     .where(eq(profile.id, existing.id));
