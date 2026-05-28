@@ -32,6 +32,7 @@ const ONBOARDING_STEPS = [
 export default function OnboardingScreen() {
   const router = useRouter();
   const [step, setStep] = useState<number>(1);
+  const [parsed, setParsed] = useState<ParsedResume | null>(null);
   const total = ONBOARDING_STEPS.length;
 
   const next = () => {
@@ -60,8 +61,8 @@ export default function OnboardingScreen() {
 
       <div className="max-w-[760px] mx-auto px-6 py-14">
         <div key={step} className="anim-pop">
-          {step === 1 && <OnbResume />}
-          {step === 2 && <OnbAbout />}
+          {step === 1 && <OnbResume parsed={parsed} onParsed={setParsed} />}
+          {step === 2 && <OnbAbout parsed={parsed} />}
           {step === 3 && <OnbRoles />}
           {step === 4 && <OnbExperience />}
           {step === 5 && <OnbPreferences />}
@@ -103,9 +104,14 @@ function StepHeader({ eyebrow, title, body }: { eyebrow: string; title: string; 
 }
 
 /* ---------- Step 1: Resume upload (real Claude parse) ---------- */
-function OnbResume() {
+function OnbResume({
+  parsed,
+  onParsed,
+}: {
+  parsed: ParsedResume | null;
+  onParsed: (p: ParsedResume | null) => void;
+}) {
   const [file, setFile] = useState<File | null>(null);
-  const [parsed, setParsed] = useState<ParsedResume | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [parseMs, setParseMs] = useState<number | null>(null);
@@ -120,7 +126,7 @@ function OnbResume() {
     setFile(f);
     setLoading(true);
     setError(null);
-    setParsed(null);
+    onParsed(null);
     setParseMs(null);
     const start = Date.now();
     try {
@@ -129,7 +135,7 @@ function OnbResume() {
       const res = await fetch("/api/parse-resume", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `Parse failed (${res.status})`);
-      setParsed(data.parsed as ParsedResume);
+      onParsed(data.parsed as ParsedResume);
       setParseMs(Date.now() - start);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to parse resume.");
@@ -140,7 +146,7 @@ function OnbResume() {
 
   function reset() {
     setFile(null);
-    setParsed(null);
+    onParsed(null);
     setError(null);
     setParseMs(null);
     if (inputRef.current) inputRef.current.value = "";
@@ -375,23 +381,75 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 /* ---------- Step 2: About ---------- */
-function OnbAbout() {
+function OnbAbout({ parsed }: { parsed: ParsedResume | null }) {
+  const c = parsed?.contact;
+  const [form, setForm] = useState({
+    name: c?.name ?? "",
+    pronouns: "",
+    email: c?.email ?? "",
+    phone: c?.phone ?? "",
+    linkedin: c?.linkedin ?? "",
+    site: c?.portfolio ?? c?.github ?? "",
+    location: c?.location ?? "",
+    timezone: "",
+  });
+  const set =
+    <K extends keyof typeof form>(k: K) =>
+    (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const fromResume = (v: string | null | undefined) => Boolean(v);
+
   return (
     <div>
       <StepHeader
         eyebrow="Step 2"
         title="A few details about you."
-        body="We use these in screener questions and to filter postings that won't sponsor or relocate."
+        body={
+          parsed
+            ? "We auto-filled what we found on your resume. Confirm and fill the rest — everything except pronouns is required."
+            : "We use these in screener questions and to filter postings that won't sponsor or relocate. Everything except pronouns is required."
+        }
       />
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Full name"><Input defaultValue="Maya Chen" /></Field>
-        <Field label="Pronouns (optional)"><Input defaultValue="she/her" /></Field>
-        <Field label="Email"><Input defaultValue="maya.chen@hey.com" /></Field>
-        <Field label="Phone"><Input defaultValue="(415) 555-0148" /></Field>
-        <Field label="LinkedIn"><Input defaultValue="linkedin.com/in/mayachen" /></Field>
-        <Field label="Personal site"><Input defaultValue="mayachen.dev" /></Field>
-        <Field label="Location"><Input defaultValue="Oakland, CA" /></Field>
-        <Field label="Time zone"><Input defaultValue="Pacific (UTC-8)" /></Field>
+        <Field label="Full name" hint={fromResume(c?.name) ? "From your resume" : undefined}>
+          <Input value={form.name} onChange={set("name")} required />
+        </Field>
+        <Field label="Pronouns (optional)">
+          <Input value={form.pronouns} onChange={set("pronouns")} placeholder="e.g. she/her" />
+        </Field>
+        <Field label="Email" hint={fromResume(c?.email) ? "From your resume" : undefined}>
+          <Input type="email" value={form.email} onChange={set("email")} required />
+        </Field>
+        <Field label="Phone" hint={fromResume(c?.phone) ? "From your resume" : undefined}>
+          <Input type="tel" value={form.phone} onChange={set("phone")} required />
+        </Field>
+        <Field label="LinkedIn" hint={fromResume(c?.linkedin) ? "From your resume" : undefined}>
+          <Input value={form.linkedin} onChange={set("linkedin")} required />
+        </Field>
+        <Field
+          label="Personal site"
+          hint={
+            fromResume(c?.portfolio)
+              ? "From your resume"
+              : fromResume(c?.github)
+                ? "Using your GitHub from your resume"
+                : undefined
+          }
+        >
+          <Input value={form.site} onChange={set("site")} required />
+        </Field>
+        <Field label="Location" hint={fromResume(c?.location) ? "From your resume" : undefined}>
+          <Input value={form.location} onChange={set("location")} required />
+        </Field>
+        <Field label="Time zone">
+          <Input
+            value={form.timezone}
+            onChange={set("timezone")}
+            placeholder="e.g. Pacific (UTC-8)"
+            required
+          />
+        </Field>
       </div>
     </div>
   );
