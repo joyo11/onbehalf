@@ -78,6 +78,22 @@ export type AboutForm = {
   timezone: string;
 };
 
+export type PrefsForm = {
+  workAuth: "us_citizen_pr" | "needs_sponsorship" | "other" | "";
+  workPreference: { remote: boolean; hybrid: boolean; onsite: boolean };
+  salaryMin: number; // in thousands USD
+  earliestStartDate: string; // YYYY-MM-DD or ""
+  locations: string[];
+};
+
+const EMPTY_PREFS: PrefsForm = {
+  workAuth: "",
+  workPreference: { remote: true, hybrid: true, onsite: false },
+  salaryMin: 170,
+  earliestStartDate: "",
+  locations: ["Remote (US)", "New York", "San Francisco"],
+};
+
 const EMPTY_ABOUT: AboutForm = {
   name: "",
   pronouns: "",
@@ -98,6 +114,11 @@ export default function OnboardingScreen() {
   const [parsed, setParsed] = useState<ParsedResume | null>(null);
   const [about, setAbout] = useState<AboutForm>(EMPTY_ABOUT);
   const [roles, setRoles] = useState<string[]>([...TARGET_ROLES]);
+  const [prefs, setPrefs] = useState<PrefsForm>(EMPTY_PREFS);
+  const [voice, setVoice] = useState<string>("");
+  const [gmailConnected, setGmailConnected] = useState<boolean>(false);
+  const [finishing, setFinishing] = useState<boolean>(false);
+  const [finishError, setFinishError] = useState<string | null>(null);
   const total = ONBOARDING_STEPS.length;
 
   // When a resume parses, seed any About fields that are still blank.
@@ -140,13 +161,41 @@ export default function OnboardingScreen() {
       return true;
     }
     if (step === 3) return roles.length >= 1;
+    if (step === 5) {
+      if (!prefs.workAuth) return false;
+      const wp = prefs.workPreference;
+      if (!wp.remote && !wp.hybrid && !wp.onsite) return false;
+      if (prefs.locations.length === 0) return false;
+      if (!prefs.earliestStartDate) return false;
+      return true;
+    }
+    if (step === 6) return voice.trim().split(/\s+/).filter(Boolean).length >= 30;
+    if (step === 7) return gmailConnected;
     return true;
   })();
 
+  async function finish() {
+    setFinishing(true);
+    setFinishError(null);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ about, roles, prefs, voice, gmailConnected }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Failed (${res.status})`);
+      router.push("/dashboard");
+    } catch (e) {
+      setFinishError(e instanceof Error ? e.message : "Failed to save profile.");
+      setFinishing(false);
+    }
+  }
+
   const next = () => {
-    if (!canContinue) return;
+    if (!canContinue || finishing) return;
     if (step < total) setStep(step + 1);
-    else router.push("/dashboard");
+    else void finish();
   };
   const back = () => step > 1 && setStep(step - 1);
 
@@ -173,10 +222,15 @@ export default function OnboardingScreen() {
           {step === 1 && <OnbResume parsed={parsed} onParsed={handleParsed} />}
           {step === 2 && <OnbAbout parsed={parsed} form={about} setForm={setAbout} />}
           {step === 3 && <OnbRoles roles={roles} setRoles={setRoles} />}
+          {step === 5 && <OnbPreferences prefs={prefs} setPrefs={setPrefs} />}
+          {step === 6 && <OnbVoice value={voice} onChange={setVoice} />}
+          {step === 7 && (
+            <OnbGmail
+              connected={gmailConnected}
+              onConnect={() => setGmailConnected(true)}
+            />
+          )}
           {step === 4 && <OnbExperience />}
-          {step === 5 && <OnbPreferences />}
-          {step === 6 && <OnbVoice />}
-          {step === 7 && <OnbGmail />}
         </div>
 
         <div className="mt-12 flex items-center justify-between">
@@ -189,20 +243,32 @@ export default function OnboardingScreen() {
             Back
           </Button>
           <div className="flex items-center gap-3">
-            {!canContinue && (
+            {finishError && (
+              <span className="text-[12.5px] text-error">{finishError}</span>
+            )}
+            {!canContinue && !finishing && !finishError && (
               <span className="text-[12.5px] text-mute">
                 {step === 1
                   ? "Upload your resume to continue"
-                  : "Fill in the required fields to continue"}
+                  : step === 6
+                    ? "Write at least 30 words to continue"
+                    : step === 7
+                      ? "Connect Gmail (or skip-equivalent) to continue"
+                      : "Fill in the required fields to continue"}
               </span>
             )}
             <Button
               onClick={next}
               variant="primary"
-              disabled={!canContinue}
-              trailing={<Icon name="arrow-right" size={14} />}
+              disabled={!canContinue || finishing}
+              loading={finishing}
+              trailing={!finishing && <Icon name="arrow-right" size={14} />}
             >
-              {step === total ? "Finish & go to dashboard" : "Continue"}
+              {step === total
+                ? finishing
+                  ? "Saving…"
+                  : "Finish & go to dashboard"
+                : "Continue"}
             </Button>
           </div>
         </div>
@@ -890,67 +956,176 @@ function SkillRow({ skill, onChange }: { skill: SkillYear; onChange: (s: SkillYe
 }
 
 /* ---------- Step 5: Preferences ---------- */
-function OnbPreferences() {
+function OnbPreferences({
+  prefs,
+  setPrefs,
+}: {
+  prefs: PrefsForm;
+  setPrefs: React.Dispatch<React.SetStateAction<PrefsForm>>;
+}) {
+  const [locInput, setLocInput] = useState("");
+  const addLocation = (v: string) => {
+    const t = v.trim();
+    if (!t) return;
+    if (prefs.locations.includes(t)) {
+      setLocInput("");
+      return;
+    }
+    setPrefs((p) => ({ ...p, locations: [...p.locations, t] }));
+    setLocInput("");
+  };
+  const removeLocation = (l: string) =>
+    setPrefs((p) => ({ ...p, locations: p.locations.filter((x) => x !== l) }));
+
+  const togglePref = (k: keyof PrefsForm["workPreference"]) =>
+    setPrefs((p) => ({ ...p, workPreference: { ...p.workPreference, [k]: !p.workPreference[k] } }));
+
   return (
     <div>
       <StepHeader
         eyebrow="Step 5"
         title="Your hard constraints."
-        body="We'll never submit to anything outside these. You can also tell us companies to avoid entirely."
+        body="We'll never submit to anything outside these."
       />
       <div className="space-y-7">
         <div>
           <SectionLabel className="mb-3">Work authorization</SectionLabel>
-          <Segmented
-            value="US citizen / Permanent resident"
-            options={["US citizen / Permanent resident", "Need sponsorship", "Other"]}
-          />
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                { v: "us_citizen_pr", label: "US citizen / Permanent resident" },
+                { v: "needs_sponsorship", label: "Need sponsorship" },
+                { v: "other", label: "Other" },
+              ] as const
+            ).map((o) => (
+              <PrefPill
+                key={o.v}
+                active={prefs.workAuth === o.v}
+                onClick={() => setPrefs((p) => ({ ...p, workAuth: o.v }))}
+              >
+                {o.label}
+              </PrefPill>
+            ))}
+          </div>
         </div>
+
         <div>
-          <SectionLabel className="mb-3">Remote preference</SectionLabel>
-          <Segmented value="Remote OK or hybrid" options={["Remote only", "Remote OK or hybrid", "On-site only"]} />
+          <SectionLabel className="mb-3">Work preference</SectionLabel>
+          <p className="text-[12.5px] text-mute mb-3">Pick any that work for you.</p>
+          <div className="flex flex-wrap gap-2">
+            <PrefPill active={prefs.workPreference.remote} onClick={() => togglePref("remote")}>
+              <Icon name="globe" size={13} /> Remote
+            </PrefPill>
+            <PrefPill active={prefs.workPreference.hybrid} onClick={() => togglePref("hybrid")}>
+              <Icon name="briefcase" size={13} /> Hybrid
+            </PrefPill>
+            <PrefPill active={prefs.workPreference.onsite} onClick={() => togglePref("onsite")}>
+              <Icon name="home" size={13} /> On-site
+            </PrefPill>
+          </div>
         </div>
+
         <div className="grid grid-cols-2 gap-4">
           <Field label="Minimum base salary" hint="We won't submit to postings below this.">
-            <Input defaultValue="$170,000" />
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[13px] text-mute pointer-events-none">
+                $
+              </span>
+              <Input
+                type="number"
+                min={0}
+                step={5}
+                value={prefs.salaryMin}
+                onChange={(e) => setPrefs((p) => ({ ...p, salaryMin: +e.target.value || 0 }))}
+                className="!pl-7"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] text-mute pointer-events-none">
+                k
+              </span>
+            </div>
           </Field>
           <Field label="Earliest start date">
-            <Input defaultValue="June 24, 2026" />
+            <Input
+              type="date"
+              value={prefs.earliestStartDate}
+              onChange={(e) => setPrefs((p) => ({ ...p, earliestStartDate: e.target.value }))}
+              required
+            />
           </Field>
         </div>
+
         <div>
           <SectionLabel className="mb-2.5">Acceptable locations</SectionLabel>
-          <div className="flex flex-wrap gap-2">
-            {TARGET_LOCATIONS.map((l) => (
-              <Chip key={l} tone="accent" onRemove={() => {}}>
-                {l}
-              </Chip>
-            ))}
-            <button className="h-7 px-2.5 text-[12.5px] rounded-sm border border-line bg-white hover:border-line-hi flex items-center gap-1.5">
-              <Icon name="plus" size={12} /> Add location
-            </button>
-          </div>
-        </div>
-        <div>
-          <SectionLabel className="mb-2.5">Exclude companies</SectionLabel>
-          <div className="flex flex-wrap gap-2">
-            {EXCLUDE_COMPANIES.map((c) => (
-              <Chip key={c} onRemove={() => {}}>
-                {c}
-              </Chip>
-            ))}
-            <button className="h-7 px-2.5 text-[12.5px] rounded-sm border border-line bg-white hover:border-line-hi flex items-center gap-1.5">
-              <Icon name="plus" size={12} /> Add company
-            </button>
-          </div>
+          <Card className="p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {prefs.locations.map((l) => (
+                <Chip key={l} tone="accent" onRemove={() => removeLocation(l)}>
+                  {l}
+                </Chip>
+              ))}
+              <input
+                value={locInput}
+                onChange={(e) => setLocInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addLocation(locInput);
+                  }
+                }}
+                placeholder={
+                  prefs.locations.length === 0
+                    ? "Type a location and press Enter (e.g. Remote (US), New York)…"
+                    : "Add a location…"
+                }
+                className="flex-1 min-w-[200px] bg-transparent text-sm outline-none placeholder:text-mute py-1"
+              />
+            </div>
+          </Card>
+          <p className="text-[12px] text-mute mt-2">
+            Examples: <span className="text-ink">Remote (US)</span>,{" "}
+            <span className="text-ink">New York</span>,{" "}
+            <span className="text-ink">San Francisco</span>,{" "}
+            <span className="text-ink">London</span>
+          </p>
         </div>
       </div>
     </div>
   );
 }
 
+function PrefPill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`h-9 px-3.5 text-[13px] rounded-ctrl border transition-colors focus-ring flex items-center gap-1.5 ${
+        active
+          ? "bg-accent-soft border-accent/40 text-accent-hover font-medium"
+          : "bg-white border-line text-ink-soft hover:text-ink hover:border-line-hi"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 /* ---------- Step 6: Voice sample ---------- */
-function OnbVoice() {
+function OnbVoice({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const words = value.trim().split(/\s+/).filter(Boolean).length;
+  const status =
+    words < 30
+      ? `${words} words · keep going — at least 30`
+      : words < 80
+        ? `${words} words · ok, more helps`
+        : `${words} words · plenty`;
   return (
     <div>
       <StepHeader
@@ -960,9 +1135,8 @@ function OnbVoice() {
       />
       <Textarea
         rows={12}
-        defaultValue={`Hey — I've been a product engineer at Brightlane for about three years. I tend to ship in tight loops, prefer working close to design, and care a lot about the small details — empty states, keyboard shortcuts, the copy on error toasts. I'd rather own one surface deeply than touch ten things at half-depth.
-
-Most of my best work happens when there's no PM in the room and I get to talk directly to the designer and a couple of customers. I'm allergic to fake-formal cover-letter language and I write the way I talk.`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         placeholder="Write a couple of paragraphs the way you'd actually talk…"
       />
       <div className="mt-3 flex items-center justify-between text-[12px] text-mute">
@@ -970,7 +1144,7 @@ Most of my best work happens when there's no PM in the room and I get to talk di
           <Icon name="sparkles" size={13} style={{ color: "var(--accent)" }} />
           We never copy your voice verbatim — we learn the rhythm and word choice.
         </div>
-        <div className="tabular-nums">187 words · plenty</div>
+        <div className="tabular-nums">{status}</div>
       </div>
     </div>
   );
@@ -979,8 +1153,7 @@ Most of my best work happens when there's no PM in the room and I get to talk di
 /* ---------- Step 7: Gmail connect ---------- */
 type Privacy = { i: IconName; t: string; d: string };
 
-function OnbGmail() {
-  const [connected, setConnected] = useState<boolean>(false);
+function OnbGmail({ connected, onConnect }: { connected: boolean; onConnect: () => void }) {
   const privacy: Privacy[] = [
     {
       i: "eye",
@@ -1022,14 +1195,17 @@ function OnbGmail() {
               <Button
                 className="mt-5"
                 variant="primary"
-                onClick={() => setConnected(true)}
+                onClick={onConnect}
                 leading={<Icon name="g-mail" size={14} />}
               >
                 Connect with Google
               </Button>
             ) : (
-              <div className="mt-5 flex items-center gap-2 text-[13px] font-medium" style={{ color: "var(--accent-hi)" }}>
-                <Icon name="check-circle" size={15} /> Connected as maya.chen@gmail.com
+              <div
+                className="mt-5 flex items-center gap-2 text-[13px] font-medium"
+                style={{ color: "var(--accent-hi)" }}
+              >
+                <Icon name="check-circle" size={15} /> Connected
               </div>
             )}
           </div>

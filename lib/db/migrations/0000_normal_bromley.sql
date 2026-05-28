@@ -68,6 +68,7 @@ CREATE TABLE "profile" (
 	"preferred_locations" text[] DEFAULT '{}'::text[] NOT NULL,
 	"desired_salary_min" integer,
 	"notice_period_weeks" integer,
+	"earliest_start_date" date,
 	"excluded_companies" text[] DEFAULT '{}'::text[] NOT NULL,
 	"voice_sample" text,
 	"tailoring_enabled" boolean DEFAULT true NOT NULL,

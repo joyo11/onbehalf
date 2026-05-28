@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   customType,
+  date,
   index,
   integer,
   jsonb,
@@ -114,6 +115,7 @@ export const profile = pgTable("profile", {
 
   desiredSalaryMin: integer("desired_salary_min"),
   noticePeriodWeeks: integer("notice_period_weeks"),
+  earliestStartDate: date("earliest_start_date"),
   excludedCompanies: text("excluded_companies").array().notNull().default(sql`'{}'::text[]`),
 
   voiceSample: text("voice_sample"),

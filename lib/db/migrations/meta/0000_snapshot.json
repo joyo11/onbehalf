@@ -1,5 +1,5 @@
 {
-  "id": "d127f549-74f0-4009-8cd1-83acab5aed33",
+  "id": "2d235a59-2501-4bfd-a464-8ca17f17407c",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -556,6 +556,12 @@
         "notice_period_weeks": {
           "name": "notice_period_weeks",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "earliest_start_date": {
+          "name": "earliest_start_date",
+          "type": "date",
           "primaryKey": false,
           "notNull": false
         },

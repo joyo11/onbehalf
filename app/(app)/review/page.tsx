@@ -97,6 +97,30 @@ function ReviewInner() {
 
   if (!data) return <ReviewSkeleton />;
 
+  async function approve() {
+    if (!data) return;
+    try {
+      const res = await fetch("/api/applications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobId: data.job.id,
+          tailoringSummary: data.tailoring.summary,
+          coverLetterText: coverDraft,
+          screeners: data.screeners.answers,
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json();
+        setError(j.error ?? `Failed (${res.status})`);
+        return;
+      }
+      router.push("/tracker");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error");
+    }
+  }
+
   return (
     <div className="bg-sand">
       <ReviewHeader job={data.job} summary={data.tailoring.summary} />
@@ -105,7 +129,7 @@ function ReviewInner() {
         <ReviewCover value={coverDraft} onChange={setCoverDraft} originalLength={data.coverLetter.word_count} />
         <ReviewScreeners answers={data.screeners.answers} />
       </div>
-      <ReviewActionBar onApprove={() => router.push("/detail")} />
+      <ReviewActionBar onApprove={approve} />
     </div>
   );
 }
