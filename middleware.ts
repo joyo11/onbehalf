@@ -3,6 +3,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // Public routes: landing + auth pages + the API parse route (we'll lock that down later).
 const isPublic = createRouteMatcher([
   "/",
+  "/about",
   "/sign-in(.*)",
   "/sign-up(.*)",
 ]);

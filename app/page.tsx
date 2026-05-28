@@ -33,9 +33,8 @@ function LandingNav() {
         <div className="flex items-center gap-8 text-sm text-mute">
           <a href="#how" className="hover:text-ink">How it works</a>
           <a href="#pricing" className="hover:text-ink">Pricing</a>
-          <a href="#" className="hover:text-ink">Changelog</a>
-          <a href="#" className="hover:text-ink">Sign in</a>
-          <Link href="/onboarding">
+          <Link href="/sign-in" className="hover:text-ink">Sign in</Link>
+          <Link href="/sign-up">
             <Button variant="primary" size="sm" trailing={<Icon name="arrow-right" size={14} />}>
               Get started
             </Button>
@@ -349,38 +348,30 @@ function LandingPricing() {
 function LandingFooter() {
   return (
     <footer className="border-t border-line">
-      <div className="max-w-[1120px] mx-auto px-6 py-12 grid grid-cols-12 gap-8">
-        <div className="col-span-5">
+      <div className="max-w-[1120px] mx-auto px-6 py-12 flex flex-col md:flex-row items-start justify-between gap-8">
+        <div className="max-w-[360px]">
           <Wordmark size={20} />
-          <p className="mt-4 text-[13px] text-mute lh-body max-w-[320px]">
+          <p className="mt-4 text-[13px] text-mute lh-body">
             Onbehalf is a job-application agent. We tailor every submission, track confirmations, and only wake you when there&apos;s good news.
           </p>
         </div>
-        <FooterCol title="Product" items={["Features", "Pricing", "Changelog", "Roadmap"]} />
-        <FooterCol title="Company" items={["About", "Careers", "Press kit", "Contact"]} />
-        <FooterCol title="Trust" items={["Privacy", "Security", "Terms", "DPA"]} />
+        <nav className="flex items-center gap-7 text-[13px] text-mute">
+          <a href="#how" className="hover:text-ink">How it works</a>
+          <a href="#pricing" className="hover:text-ink">Pricing</a>
+          <Link href="/about" className="hover:text-ink">About</Link>
+        </nav>
       </div>
-      <div className="max-w-[1120px] mx-auto px-6 py-4 border-t border-line flex items-center justify-between text-[12px] text-mute">
-        <span>© 2026 Onbehalf, Inc.</span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E]" /> All systems normal
-        </span>
+      <div className="max-w-[1120px] mx-auto px-6 py-4 border-t border-line text-[12px] text-mute">
+        © 2026 Onbehalf — a prototype by{" "}
+        <a
+          href="https://github.com/joyo11"
+          target="_blank"
+          rel="noreferrer"
+          className="hover:text-ink underline underline-offset-2"
+        >
+          @joyo11
+        </a>
       </div>
     </footer>
-  );
-}
-
-function FooterCol({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="col-span-2">
-      <div className="text-[12px] font-semibold mb-3">{title}</div>
-      <ul className="space-y-2 text-[13px] text-mute">
-        {items.map((i) => (
-          <li key={i}>
-            <a href="#" className="hover:text-ink">{i}</a>
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }
