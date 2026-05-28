@@ -134,11 +134,8 @@ export default function OnboardingScreen() {
       ];
       if (!baseReq.every((k) => about[k].trim() !== "")) return false;
       if (!isValidLinkedIn(about.linkedin)) return false;
-      if (about.country === "US") {
-        if (!about.state.trim()) return false;
-      } else {
-        if (!about.city.trim()) return false;
-      }
+      if (!about.city.trim()) return false;
+      if (about.country === "US" && !about.state.trim()) return false;
       if (about.github.trim() && !isValidGitHub(about.github)) return false;
       return true;
     }
@@ -616,7 +613,7 @@ function OnbAbout({
             ))}
           </Select>
         </Field>
-        {form.country === "US" ? (
+        {form.country === "US" && (
           <Field label="State">
             <Select value={form.state} onChange={setSelect("state")} required>
               <option value="" disabled>
@@ -629,16 +626,18 @@ function OnbAbout({
               ))}
             </Select>
           </Field>
-        ) : form.country ? (
+        )}
+        {form.country && (
           <Field label="City">
             <Input
               value={form.city}
               onChange={setText("city")}
-              placeholder="e.g. Karachi"
+              placeholder={form.country === "US" ? "e.g. San Francisco" : "e.g. Karachi"}
               required
             />
           </Field>
-        ) : (
+        )}
+        {!form.country && (
           <Field label="State / City">
             <div className="h-10 px-3 rounded-ctrl border border-line bg-[#FBFAF6] flex items-center text-[12.5px] text-mute">
               Pick a country first
