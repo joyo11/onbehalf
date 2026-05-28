@@ -17,7 +17,12 @@ import {
   TARGET_LOCATIONS,
   TARGET_ROLES,
 } from "@/lib/data";
+import { COUNTRIES, US_STATES, guessCountryStateFrom } from "@/lib/locations";
 import type { ParsedResume, SkillYear } from "@/lib/types";
+
+function isValidLinkedIn(url: string): boolean {
+  return url.trim().toLowerCase().includes("linkedin.com");
+}
 
 const ONBOARDING_STEPS = [
   { id: 1, label: "Resume" },
@@ -36,7 +41,10 @@ export type AboutForm = {
   phone: string;
   linkedin: string;
   site: string;
-  location: string;
+  github: string;
+  country: string;
+  state: string;
+  city: string;
   timezone: string;
 };
 
@@ -47,7 +55,10 @@ const EMPTY_ABOUT: AboutForm = {
   phone: "",
   linkedin: "",
   site: "",
-  location: "",
+  github: "",
+  country: "",
+  state: "",
+  city: "",
   timezone: "",
 };
 
@@ -64,30 +75,40 @@ export default function OnboardingScreen() {
     setParsed(p);
     if (!p) return;
     const c = p.contact;
+    const loc = guessCountryStateFrom(c.location);
     setAbout((prev) => ({
       ...prev,
       name: prev.name || c.name || "",
       email: prev.email || c.email || "",
       phone: prev.phone || c.phone || "",
       linkedin: prev.linkedin || c.linkedin || "",
-      site: prev.site || c.portfolio || c.github || "",
-      location: prev.location || c.location || "",
+      site: prev.site || c.portfolio || "",
+      github: prev.github || c.github || "",
+      country: prev.country || loc.country || "",
+      state: prev.state || loc.state || "",
+      city: prev.city || loc.city || "",
     }));
   }
 
   const canContinue = (() => {
     if (step === 1) return parsed !== null;
     if (step === 2) {
-      const req: (keyof AboutForm)[] = [
+      const baseReq: (keyof AboutForm)[] = [
         "name",
         "email",
         "phone",
         "linkedin",
-        "site",
-        "location",
+        "country",
         "timezone",
       ];
-      return req.every((k) => about[k].trim() !== "");
+      if (!baseReq.every((k) => about[k].trim() !== "")) return false;
+      if (!isValidLinkedIn(about.linkedin)) return false;
+      if (about.country === "US") {
+        if (!about.state.trim()) return false;
+      } else {
+        if (!about.city.trim()) return false;
+      }
+      return true;
     }
     return true;
   })();
@@ -460,12 +481,17 @@ function OnbAbout({
   setForm: React.Dispatch<React.SetStateAction<AboutForm>>;
 }) {
   const c = parsed?.contact;
-  const set =
+  const setText =
     <K extends keyof AboutForm>(k: K) =>
     (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((f) => ({ ...f, [k]: e.target.value }));
+  const setSelect =
+    <K extends keyof AboutForm>(k: K) =>
+    (e: React.ChangeEvent<HTMLSelectElement>) =>
+      setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const fromResume = (v: string | null | undefined) => Boolean(v);
+  const linkedinInvalid = form.linkedin.trim().length > 0 && !isValidLinkedIn(form.linkedin);
 
   return (
     <div>
@@ -474,60 +500,158 @@ function OnbAbout({
         title="A few details about you."
         body={
           parsed
-            ? "We auto-filled what we found on your resume. Confirm and fill the rest — everything except pronouns is required."
-            : "We use these in screener questions and to filter postings that won't sponsor or relocate. Everything except pronouns is required."
+            ? "We auto-filled what we found on your resume. Confirm and fill the rest."
+            : "We use these in screener questions and to filter postings that won't sponsor or relocate."
         }
       />
       <div className="grid grid-cols-2 gap-4">
         <Field label="Full name" hint={fromResume(c?.name) ? "From your resume" : undefined}>
-          <Input value={form.name} onChange={set("name")} required />
+          <Input value={form.name} onChange={setText("name")} required />
         </Field>
         <Field label="Pronouns (optional)">
-          <Input value={form.pronouns} onChange={set("pronouns")} placeholder="e.g. she/her" />
+          <Input value={form.pronouns} onChange={setText("pronouns")} placeholder="e.g. she/her" />
         </Field>
         <Field label="Email" hint={fromResume(c?.email) ? "From your resume" : undefined}>
-          <Input type="email" value={form.email} onChange={set("email")} required />
+          <Input type="email" value={form.email} onChange={setText("email")} required />
         </Field>
         <Field label="Phone" hint={fromResume(c?.phone) ? "From your resume" : undefined}>
-          <Input type="tel" value={form.phone} onChange={set("phone")} required />
-        </Field>
-        <Field label="LinkedIn" hint={fromResume(c?.linkedin) ? "From your resume" : undefined}>
-          <Input value={form.linkedin} onChange={set("linkedin")} required />
+          <Input type="tel" value={form.phone} onChange={setText("phone")} required />
         </Field>
         <Field
-          label="Personal site"
+          label="LinkedIn URL"
           hint={
-            fromResume(c?.portfolio)
-              ? "From your resume"
-              : fromResume(c?.github)
-                ? "Using your GitHub from your resume"
+            linkedinInvalid
+              ? "Must be a LinkedIn URL (e.g. linkedin.com/in/yourname)"
+              : fromResume(c?.linkedin)
+                ? "From your resume"
                 : undefined
           }
+          hintTone={linkedinInvalid ? "error" : "neutral"}
         >
-          <Input value={form.site} onChange={set("site")} required />
+          <Input
+            value={form.linkedin}
+            onChange={setText("linkedin")}
+            placeholder="linkedin.com/in/yourname"
+            required
+          />
         </Field>
-        <Field label="Location" hint={fromResume(c?.location) ? "From your resume" : undefined}>
-          <Input value={form.location} onChange={set("location")} required />
+        <Field
+          label="GitHub (optional)"
+          hint={fromResume(c?.github) ? "From your resume" : undefined}
+        >
+          <Input
+            value={form.github}
+            onChange={setText("github")}
+            placeholder="github.com/yourname"
+          />
+        </Field>
+        <Field
+          label="Personal site (optional)"
+          hint={fromResume(c?.portfolio) ? "From your resume" : undefined}
+        >
+          <Input
+            value={form.site}
+            onChange={setText("site")}
+            placeholder="yourdomain.com"
+          />
         </Field>
         <Field label="Time zone">
           <Input
             value={form.timezone}
-            onChange={set("timezone")}
+            onChange={setText("timezone")}
             placeholder="e.g. Pacific (UTC-8)"
             required
           />
         </Field>
+        <Field label="Country">
+          <Select value={form.country} onChange={setSelect("country")} required>
+            <option value="" disabled>
+              Select a country…
+            </option>
+            {COUNTRIES.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {form.country === "US" ? (
+          <Field label="State">
+            <Select value={form.state} onChange={setSelect("state")} required>
+              <option value="" disabled>
+                Select a state…
+              </option>
+              {US_STATES.map((s) => (
+                <option key={s.code} value={s.code}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : form.country ? (
+          <Field label="City">
+            <Input
+              value={form.city}
+              onChange={setText("city")}
+              placeholder="e.g. Karachi"
+              required
+            />
+          </Field>
+        ) : (
+          <Field label="State / City">
+            <div className="h-10 px-3 rounded-ctrl border border-line bg-[#FBFAF6] flex items-center text-[12.5px] text-mute">
+              Pick a country first
+            </div>
+          </Field>
+        )}
       </div>
     </div>
   );
 }
 
-function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+function Select({
+  children,
+  className = "",
+  ...rest
+}: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select
+      className={`h-10 w-full px-3 pr-8 rounded-ctrl border border-line bg-white text-sm text-ink focus-ring transition-shadow appearance-none cursor-pointer ${className}`}
+      style={{
+        backgroundImage:
+          "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B6B6B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",
+        backgroundRepeat: "no-repeat",
+        backgroundPosition: "right 12px center",
+      }}
+      {...rest}
+    >
+      {children}
+    </select>
+  );
+}
+
+function Field({
+  label,
+  children,
+  hint,
+  hintTone = "neutral",
+}: {
+  label: string;
+  children: ReactNode;
+  hint?: string;
+  hintTone?: "neutral" | "error";
+}) {
   return (
     <label className="block">
       <span className="text-[12.5px] font-medium text-ink block mb-1.5">{label}</span>
       {children}
-      {hint && <span className="text-[12px] text-mute block mt-1.5">{hint}</span>}
+      {hint && (
+        <span
+          className={`text-[12px] block mt-1.5 ${hintTone === "error" ? "text-error" : "text-mute"}`}
+        >
+          {hint}
+        </span>
+      )}
     </label>
   );
 }
