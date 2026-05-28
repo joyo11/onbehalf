@@ -3,7 +3,7 @@
 /*  Onboarding — 7 steps, sticky progress bar. */
 
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, SectionLabel } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
@@ -17,7 +17,7 @@ import {
   TARGET_LOCATIONS,
   TARGET_ROLES,
 } from "@/lib/data";
-import type { SkillYear } from "@/lib/types";
+import type { ParsedResume, SkillYear } from "@/lib/types";
 
 const ONBOARDING_STEPS = [
   { id: 1, label: "Resume" },
@@ -102,21 +102,87 @@ function StepHeader({ eyebrow, title, body }: { eyebrow: string; title: string; 
   );
 }
 
-/* ---------- Step 1: Resume upload ---------- */
+/* ---------- Step 1: Resume upload (real Claude parse) ---------- */
 function OnbResume() {
-  const [parsed, setParsed] = useState<boolean>(true); // pretend it's been parsed
+  const [file, setFile] = useState<File | null>(null);
+  const [parsed, setParsed] = useState<ParsedResume | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [parseMs, setParseMs] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  async function handleFile(f: File) {
+    if (f.type !== "application/pdf") {
+      setError("Only PDF resumes are supported for now.");
+      return;
+    }
+    setFile(f);
+    setLoading(true);
+    setError(null);
+    setParsed(null);
+    setParseMs(null);
+    const start = Date.now();
+    try {
+      const fd = new FormData();
+      fd.append("file", f);
+      const res = await fetch("/api/parse-resume", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Parse failed (${res.status})`);
+      setParsed(data.parsed as ParsedResume);
+      setParseMs(Date.now() - start);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to parse resume.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function reset() {
+    setFile(null);
+    setParsed(null);
+    setError(null);
+    setParseMs(null);
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
   return (
     <div>
       <StepHeader
         eyebrow="Step 1"
         title="Let's start with your resume."
-        body="Drop in a PDF or DOCX. We'll parse the structure and confirm the sections we found — you can edit anything that looks off."
+        body="Drop in a PDF. We'll parse the structure and confirm the sections we found — you can edit anything that looks off."
       />
 
-      {!parsed ? (
+      <input
+        ref={inputRef}
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void handleFile(f);
+        }}
+      />
+
+      {!file && (
         <button
-          className="w-full rounded-md border-2 border-dashed border-line bg-white hover:border-[var(--accent)] transition-colors py-14 flex flex-col items-center gap-3"
-          onClick={() => setParsed(true)}
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            const f = e.dataTransfer.files?.[0];
+            if (f) void handleFile(f);
+          }}
+          className={`w-full rounded-md border-2 border-dashed bg-white transition-colors py-14 flex flex-col items-center gap-3 ${
+            dragging ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-line hover:border-[var(--accent)]"
+          }`}
         >
           <div
             className="w-12 h-12 rounded-md flex items-center justify-center"
@@ -125,9 +191,11 @@ function OnbResume() {
             <Icon name="upload" size={22} />
           </div>
           <div className="text-[15px] font-medium">Drop your resume here</div>
-          <div className="text-[13px] text-mute">PDF, DOCX, or paste plain text</div>
+          <div className="text-[13px] text-mute">PDF, up to 10 MB</div>
         </button>
-      ) : (
+      )}
+
+      {file && (
         <>
           <Card className="p-4 flex items-center gap-4">
             <div
@@ -136,44 +204,172 @@ function OnbResume() {
             >
               <Icon name="file" size={18} />
             </div>
-            <div className="flex-1">
-              <div className="text-[14px] font-medium">maya_chen_resume.pdf</div>
-              <div className="text-[12px] text-mute">142 KB · Parsed in 0.8s</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[14px] font-medium truncate">{file.name}</div>
+              <div className="text-[12px] text-mute">
+                {Math.max(1, Math.round(file.size / 1024))} KB ·{" "}
+                {loading
+                  ? "Parsing with Claude…"
+                  : parseMs !== null
+                    ? `Parsed in ${(parseMs / 1000).toFixed(1)}s`
+                    : error
+                      ? "Failed"
+                      : ""}
+              </div>
             </div>
-            <div className="flex items-center gap-1.5 text-[12.5px] font-medium" style={{ color: "var(--accent-hi)" }}>
-              <Icon name="check-circle" size={14} /> Parsed
-            </div>
-            <button className="text-[12.5px] text-mute hover:text-ink" onClick={() => setParsed(false)}>
+            {loading && (
+              <Icon name="loader-2" size={16} className="text-mute animate-spin" />
+            )}
+            {!loading && parsed && (
+              <div
+                className="flex items-center gap-1.5 text-[12.5px] font-medium"
+                style={{ color: "var(--accent-hi)" }}
+              >
+                <Icon name="check-circle" size={14} /> Parsed
+              </div>
+            )}
+            {!loading && error && (
+              <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-error">
+                <Icon name="alert-circle" size={14} /> Error
+              </div>
+            )}
+            <button className="text-[12.5px] text-mute hover:text-ink" onClick={reset}>
               Replace
             </button>
           </Card>
 
-          <SectionLabel className="mt-10 mb-3">Sections we found</SectionLabel>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { t: "Summary", n: "3 lines", e: "Senior product engineer · 6 yrs · fintech focus" },
-              { t: "Experience", n: "4 roles", e: "Brightlane, Doximity, Lambda School, freelance" },
-              { t: "Education", n: "1 entry", e: "B.S. Computer Science, UCSD · 2018" },
-              { t: "Skills", n: "14 items", e: "React, TypeScript, Node, PostgreSQL, Kubernetes…" },
-              { t: "Projects", n: "3 entries", e: "Open-source CLI tools, side projects" },
-              { t: "Certifications", n: "None", e: "No certifications detected" },
-            ].map((s) => (
-              <Card key={s.t} className="p-4 flex items-start justify-between" hover>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[13.5px] font-medium">{s.t}</span>
-                    <span className="text-[11px] text-mute">· {s.n}</span>
-                  </div>
-                  <div className="text-[12.5px] text-mute mt-1 lh-body truncate">{s.e}</div>
-                </div>
-                <button className="ml-3 text-mute hover:text-ink">
-                  <Icon name="edit" size={14} />
-                </button>
-              </Card>
-            ))}
-          </div>
+          {error && (
+            <Card className="mt-4 p-4 border-error/40 bg-[#FBF5F5]">
+              <div className="flex items-start gap-3">
+                <Icon name="alert-circle" size={16} className="text-error mt-0.5 shrink-0" />
+                <div className="text-[13px] text-ink leading-relaxed">{error}</div>
+              </div>
+            </Card>
+          )}
+
+          {loading && <SectionsSkeleton />}
+          {parsed && <SectionsGrid parsed={parsed} />}
         </>
       )}
+    </div>
+  );
+}
+
+function SectionsSkeleton() {
+  return (
+    <>
+      <SectionLabel className="mt-10 mb-3">Reading your resume…</SectionLabel>
+      <div className="grid grid-cols-2 gap-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Card key={i} className="p-4">
+            <div className="shimmer h-3 w-24 rounded" />
+            <div className="shimmer h-3 w-full mt-3 rounded" />
+            <div className="shimmer h-3 w-3/4 mt-2 rounded" />
+          </Card>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function SectionsGrid({ parsed }: { parsed: ParsedResume }) {
+  const experience = parsed.sections.filter((s) => s.type === "experience");
+  const education = parsed.sections.filter((s) => s.type === "education");
+  const projects = parsed.sections.filter((s) => s.type === "projects");
+  const certifications = parsed.sections.filter((s) => s.type === "certifications");
+
+  const expExcerpt = experience
+    .map((s) => s.organization ?? s.title)
+    .filter((x): x is string => Boolean(x))
+    .slice(0, 4)
+    .join(", ");
+  const eduExcerpt = education
+    .map((s) => [s.title, s.organization].filter(Boolean).join(" · "))
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(" · ");
+  const projExcerpt = projects.map((s) => s.title).slice(0, 3).join(", ");
+  const certExcerpt = certifications.map((s) => s.title).slice(0, 3).join(", ");
+  const skillsExcerpt = parsed.skills.map((s) => s.skill).slice(0, 6).join(", ");
+
+  const groups = [
+    {
+      t: "Summary",
+      n: parsed.summary ? "1 entry" : "Not found",
+      e: parsed.summary ?? "No summary section detected",
+    },
+    {
+      t: "Experience",
+      n: `${experience.length} ${experience.length === 1 ? "role" : "roles"}`,
+      e: expExcerpt || "No experience section detected",
+    },
+    {
+      t: "Education",
+      n: `${education.length} ${education.length === 1 ? "entry" : "entries"}`,
+      e: eduExcerpt || "No education section detected",
+    },
+    {
+      t: "Skills",
+      n: `${parsed.skills.length} ${parsed.skills.length === 1 ? "item" : "items"}`,
+      e: skillsExcerpt || "No skills section detected",
+    },
+    {
+      t: "Projects",
+      n: `${projects.length} ${projects.length === 1 ? "entry" : "entries"}`,
+      e: projExcerpt || "No projects section detected",
+    },
+    {
+      t: "Certifications",
+      n: certifications.length === 0 ? "None" : `${certifications.length} ${certifications.length === 1 ? "entry" : "entries"}`,
+      e: certExcerpt || "No certifications detected",
+    },
+  ];
+
+  const hasContact = Object.values(parsed.contact).some((v) => v);
+
+  return (
+    <>
+      {hasContact && (
+        <Card className="mt-6 p-4">
+          <SectionLabel className="mb-2">Contact</SectionLabel>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[13px]">
+            {parsed.contact.name && <Row label="Name" value={parsed.contact.name} />}
+            {parsed.contact.email && <Row label="Email" value={parsed.contact.email} />}
+            {parsed.contact.phone && <Row label="Phone" value={parsed.contact.phone} />}
+            {parsed.contact.location && <Row label="Location" value={parsed.contact.location} />}
+            {parsed.contact.linkedin && <Row label="LinkedIn" value={parsed.contact.linkedin} />}
+            {parsed.contact.github && <Row label="GitHub" value={parsed.contact.github} />}
+            {parsed.contact.portfolio && <Row label="Portfolio" value={parsed.contact.portfolio} />}
+          </div>
+        </Card>
+      )}
+
+      <SectionLabel className="mt-8 mb-3">Sections we found</SectionLabel>
+      <div className="grid grid-cols-2 gap-3">
+        {groups.map((s) => (
+          <Card key={s.t} className="p-4 flex items-start justify-between" hover>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[13.5px] font-medium">{s.t}</span>
+                <span className="text-[11px] text-mute">· {s.n}</span>
+              </div>
+              <div className="text-[12.5px] text-mute mt-1 lh-body line-clamp-2">{s.e}</div>
+            </div>
+            <button className="ml-3 text-mute hover:text-ink" aria-label={`Edit ${s.t}`}>
+              <Icon name="edit" size={14} />
+            </button>
+          </Card>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-3 min-w-0">
+      <span className="text-mute w-[68px] shrink-0">{label}</span>
+      <span className="text-ink truncate">{value}</span>
     </div>
   );
 }

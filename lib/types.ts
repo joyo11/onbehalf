@@ -76,6 +76,50 @@ export type Company = {
   size: string;
 };
 
+export type ResumeSectionType =
+  | "summary"
+  | "experience"
+  | "education"
+  | "skills"
+  | "projects"
+  | "certifications"
+  | "publications"
+  | "awards"
+  | "other";
+
+export type ParsedResumeContact = {
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  location: string | null;
+  linkedin: string | null;
+  github: string | null;
+  portfolio: string | null;
+};
+
+export type ParsedResumeSection = {
+  type: ResumeSectionType;
+  title: string;
+  organization: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  bullets: string[];
+  tags: string[];
+};
+
+export type ParsedResumeSkill = {
+  skill: string;
+  years: number | null;
+  level: "Beginner" | "Intermediate" | "Advanced" | "Expert" | null;
+};
+
+export type ParsedResume = {
+  contact: ParsedResumeContact;
+  summary: string | null;
+  sections: ParsedResumeSection[];
+  skills: ParsedResumeSkill[];
+};
+
 export type TrackerRow = {
   id: string;
   n: number;
