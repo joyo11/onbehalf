@@ -199,7 +199,13 @@ export default function SearchScreen() {
               variant="primary"
               size="lg"
               className="w-full mt-5"
-              onClick={() => router.push("/matches")}
+              onClick={() => {
+                const params = new URLSearchParams();
+                if (keywords.length > 0) params.set("roles", keywords.join(","));
+                if (locations.length > 0) params.set("locations", locations.join(","));
+                if (salary > 0) params.set("salaryMin", String(salary * 1000));
+                router.push(`/matches?${params.toString()}`);
+              }}
               leading={<Icon name="sparkles" size={14} />}
             >
               Find &amp; apply
