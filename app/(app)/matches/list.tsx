@@ -21,7 +21,7 @@ export function MatchesList({ jobs }: { jobs: MatchedJob[] }) {
           job={j}
           expanded={expanded === j.id}
           onToggle={() => setExpanded(expanded === j.id ? null : j.id)}
-          onTailor={() => router.push("/review")}
+          onTailor={() => router.push(`/review?jobId=${encodeURIComponent(j.id)}`)}
         />
       ))}
     </div>

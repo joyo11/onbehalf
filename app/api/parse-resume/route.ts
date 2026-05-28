@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
+import { getCurrentUser } from "@/lib/auth";
+import { saveParsedResume } from "@/lib/db/profile";
 import { PARSE_RESUME_SCHEMA, PARSE_RESUME_SYSTEM } from "@/lib/prompts/parse-resume";
 import type { ParsedResume } from "@/lib/types";
 
@@ -14,6 +16,11 @@ export async function POST(req: Request) {
       { error: "ANTHROPIC_API_KEY is not configured on the server." },
       { status: 500 },
     );
+  }
+
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
   const form = await req.formData();
@@ -88,6 +95,15 @@ export async function POST(req: Request) {
         { error: "Model output was not valid JSON.", raw: textBlock.text.slice(0, 500) },
         { status: 502 },
       );
+    }
+
+    // Persist: update profile contact + replace resume_section rows.
+    try {
+      await saveParsedResume(user, parsed);
+    } catch (e) {
+      // Don't fail the parse if the DB save errors — return parsed result
+      // so the UI still updates, and log so we can investigate.
+      console.error("saveParsedResume failed:", e);
     }
 
     return NextResponse.json(

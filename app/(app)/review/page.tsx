@@ -1,339 +1,364 @@
 "use client";
 
-/*  Review screen — demo hero.
-    Split layout: original ↔ tailored with hover-tooltip reasoning per diff.
-    Cover letter editable, screener Q&A with confidence indicators.    */
-
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, SectionLabel } from "@/components/ui/card";
-import { DiffLine } from "@/components/ui/diff";
 import { Icon } from "@/components/ui/icon";
 import { MatchScore } from "@/components/ui/match-score";
 import { Monogram } from "@/components/ui/monogram";
-import {
-  REVIEW_COVER_LETTER,
-  REVIEW_JOB,
-  REVIEW_ORIGINAL,
-  REVIEW_SCREENERS,
-  REVIEW_TAILORED,
-} from "@/lib/data";
-import type { Confidence, ScreenerQ } from "@/lib/types";
+import { Textarea } from "@/components/ui/input";
+import type { ScreenerAnswer } from "@/lib/prompts/screener-answers";
+import type { TailoredBullet, TailoredSection } from "@/lib/prompts/tailor-resume";
+
+type TailorPayload = {
+  job: {
+    id: string;
+    company: string;
+    title: string;
+    location: string | null;
+    applyUrl: string;
+  };
+  tailoring: { sections: TailoredSection[]; summary: string };
+  coverLetter: { cover_letter: string; word_count: number };
+  screeners: { answers: ScreenerAnswer[] };
+};
 
 export default function ReviewScreen() {
+  return (
+    <Suspense fallback={<ReviewSkeleton />}>
+      <ReviewInner />
+    </Suspense>
+  );
+}
+
+function ReviewInner() {
   const router = useRouter();
+  const sp = useSearchParams();
+  const jobId = sp.get("jobId");
+  const [data, setData] = useState<TailorPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [coverDraft, setCoverDraft] = useState<string>("");
+
+  useEffect(() => {
+    if (!jobId) {
+      setError("No job selected. Go back to Matches and pick a role.");
+      return;
+    }
+    let cancelled = false;
+    setData(null);
+    setError(null);
+    fetch("/api/tailor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId }),
+    })
+      .then(async (res) => {
+        const json = await res.json();
+        if (cancelled) return;
+        if (!res.ok) {
+          setError(json.error ?? `Failed (${res.status})`);
+          return;
+        }
+        setData(json as TailorPayload);
+        setCoverDraft(json.coverLetter.cover_letter);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : "Network error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId]);
+
+  if (error) {
+    return (
+      <div className="px-10 py-16 max-w-[760px] mx-auto">
+        <Card className="p-8 text-center">
+          <div className="h-14 w-14 rounded-card border border-error/30 bg-[#FBF5F5] flex items-center justify-center mx-auto mb-4">
+            <Icon name="alert-circle" size={22} className="text-error" />
+          </div>
+          <h2 className="text-[17px] font-semibold">Couldn&apos;t tailor this job</h2>
+          <p className="text-[13.5px] text-mute mt-2 max-w-md mx-auto">{error}</p>
+          <div className="mt-5 flex items-center justify-center gap-2">
+            <Link href="/matches">
+              <Button variant="secondary">Back to matches</Button>
+            </Link>
+            <Link href="/onboarding">
+              <Button variant="ghost">Update resume</Button>
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!data) return <ReviewSkeleton />;
+
   return (
     <div className="bg-sand">
-      <ReviewHeader />
+      <ReviewHeader job={data.job} summary={data.tailoring.summary} />
       <div className="px-10 pt-7 pb-32 max-w-[1440px] mx-auto">
-        <ReviewDiff />
-        <ReviewCover />
-        <ReviewScreeners />
+        <ReviewDiff sections={data.tailoring.sections} />
+        <ReviewCover value={coverDraft} onChange={setCoverDraft} originalLength={data.coverLetter.word_count} />
+        <ReviewScreeners answers={data.screeners.answers} />
       </div>
       <ReviewActionBar onApprove={() => router.push("/detail")} />
     </div>
   );
 }
 
-function ReviewHeader() {
+function ReviewSkeleton() {
+  return (
+    <div>
+      <div className="border-b border-line bg-white px-10 py-6">
+        <div className="max-w-[1440px] mx-auto flex items-center gap-6">
+          <div className="shimmer w-14 h-14 rounded-md" />
+          <div className="flex-1">
+            <div className="shimmer h-5 w-2/3 rounded" />
+            <div className="shimmer h-3 w-1/2 mt-2 rounded" />
+          </div>
+          <div className="shimmer w-14 h-14 rounded-full" />
+        </div>
+      </div>
+      <div className="px-10 pt-7 max-w-[1440px] mx-auto">
+        <SectionLabel className="mb-3">Tailoring your resume with Claude…</SectionLabel>
+        <Card className="p-6 space-y-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="shimmer h-3 w-full rounded" />
+          ))}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function ReviewHeader({
+  job,
+  summary,
+}: {
+  job: TailorPayload["job"];
+  summary: string;
+}) {
   return (
     <div className="border-b border-line bg-white">
       <div className="px-10 py-6 max-w-[1440px] mx-auto flex items-center gap-6">
-        <Monogram name={REVIEW_JOB.company} size={56} />
+        <Monogram name={job.company} size={56} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="text-[22px] font-semibold tracking-[-0.018em]">{REVIEW_JOB.role}</h1>
+            <h1 className="text-[22px] font-semibold tracking-[-0.018em]">{job.title}</h1>
             <span
               className="inline-flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] px-1.5 py-0.5 rounded-sm"
               style={{ background: "var(--accent-soft)", color: "var(--accent-hi)" }}
             >
-              <Icon name="star" size={10} /> Strong match
+              <Icon name="sparkles" size={10} /> Tailored by Claude
             </span>
           </div>
           <div className="text-[13px] text-mute mt-1">
-            {REVIEW_JOB.company} <Dot /> {REVIEW_JOB.location} <Dot /> {REVIEW_JOB.salary} <Dot />
-            <a href="#" className="text-mute hover:text-ink underline underline-offset-2">
+            {job.company}
+            {job.location && (
+              <>
+                <Dot /> {job.location}
+              </>
+            )}
+            <Dot />
+            <a
+              href={job.applyUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-mute hover:text-ink underline underline-offset-2"
+            >
               View original posting
             </a>
           </div>
-        </div>
-        <div className="flex items-center gap-5">
-          <div className="text-right">
-            <div className="text-[10.5px] uppercase tracking-[0.06em] font-semibold text-mute">Match</div>
-            <div className="flex items-baseline gap-1.5 justify-end mt-0.5">
-              <span className="text-[28px] font-semibold tabular-nums" style={{ color: "var(--accent-hi)" }}>
-                {REVIEW_JOB.score}
+          {summary && (
+            <div className="text-[13px] text-ink/85 mt-2 lh-body max-w-[820px]">
+              <span className="text-[10.5px] uppercase tracking-[0.06em] font-semibold text-mute mr-2">
+                Summary
               </span>
-              <span className="text-[12.5px] text-mute">/100</span>
+              {summary}
             </div>
-          </div>
-          <MatchScore score={REVIEW_JOB.score} size={56} stroke={5} label={false} />
+          )}
         </div>
+        <MatchScore score={90} size={56} stroke={5} />
       </div>
     </div>
   );
 }
 
-function Dot() {
-  return <span className="text-[#D6D3CC] mx-1">·</span>;
-}
-
-/* ---------- Diff: original vs tailored bullets ---------- */
-function ReviewDiff() {
-  return (
-    <section>
-      <div className="flex items-center justify-between">
-        <div>
-          <SectionLabel>Resume bullets · experience</SectionLabel>
-          <h2 className="mt-2 text-[20px] font-semibold tracking-[-0.018em]">
-            I rewrote 4 of 5 bullets. <span className="text-mute font-normal">Hover any change to see why.</span>
-          </h2>
-        </div>
-        <div className="flex items-center gap-4 text-[12px] text-mute">
-          <LegendDot color="var(--accent)" label="Added" />
-          <LegendDot color="#DC2626" label="Removed" />
-          <LegendDot color="#D6D3CC" label="Unchanged" />
-        </div>
-      </div>
-
-      <div className="mt-5 grid grid-cols-2 gap-5">
-        <Card className="overflow-hidden">
-          <DiffColHeader label="Original" sub="from maya_chen_resume.pdf" />
-          <ul className="px-6 py-5 space-y-4 text-[13.5px] lh-body" style={{ color: "#7B7B7B" }}>
-            {REVIEW_ORIGINAL.map((line, i) => (
-              <li key={i} className="flex gap-3">
-                <span className="text-[#C8C5BE] mt-1.5">•</span>
-                <span>{line}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-
-        <Card className="overflow-hidden" style={{ borderColor: "var(--accent)", borderWidth: 1.5 }}>
-          <DiffColHeader label="Tailored for Linear" sub="4 changes · hover any highlight to see reasoning" accent />
-          <ul className="px-6 py-5 space-y-4 text-[13.5px] lh-body">
-            {REVIEW_TAILORED.map((segments, i) => (
-              <li key={i} className="flex gap-3">
-                <span style={{ color: "var(--accent)" }} className="mt-1.5">•</span>
-                <span>
-                  <DiffLine segments={segments} />
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      </div>
-
-      <div className="mt-4 flex items-center gap-2 text-[12.5px] text-mute">
-        <Icon name="sparkles" size={13} style={{ color: "var(--accent)" }} />
-        Every change passes your voice filter — bullets read like you wrote them.
-        <button className="ml-auto text-mute hover:text-ink underline underline-offset-2">Revert all changes</button>
-      </div>
-    </section>
-  );
-}
-
-function DiffColHeader({ label, sub, accent }: { label: string; sub: string; accent?: boolean }) {
-  return (
-    <div
-      className="px-6 py-4 border-b border-line flex items-center justify-between"
-      style={accent ? { background: "var(--accent-soft)" } : { background: "#FBFAF7" }}
-    >
-      <div>
-        <div className="text-[13px] font-semibold" style={{ color: accent ? "var(--accent-hi)" : "#1A1A1A" }}>
-          {label}
-        </div>
-        <div
-          className="text-[11.5px] mt-0.5"
-          style={{ color: accent ? "var(--accent-hi)" : "#6B6B6B", opacity: accent ? 0.85 : 1 }}
-        >
-          {sub}
-        </div>
-      </div>
-      <button className="text-mute hover:text-ink">
-        <Icon name="edit" size={14} />
-      </button>
-    </div>
-  );
-}
-
-function LegendDot({ color, label }: { color: string; label: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="w-2 h-2 rounded-full" style={{ background: color }} />
-      {label}
-    </span>
-  );
-}
-
-/* ---------- Cover letter ---------- */
-function ReviewCover() {
-  const [text, setText] = useState<string>(REVIEW_COVER_LETTER);
-  const words = text.trim().split(/\s+/).filter(Boolean).length;
-  const tooLong = words > 280;
-  return (
-    <section className="mt-10">
-      <div className="flex items-center justify-between">
-        <div>
-          <SectionLabel>Cover letter</SectionLabel>
-          <h2 className="mt-2 text-[20px] font-semibold tracking-[-0.018em]">
-            I drafted this in your voice. Edit anything before you send.
-          </h2>
-        </div>
-        <div className="flex items-center gap-2 text-[12.5px]">
-          <button className="text-mute hover:text-ink flex items-center gap-1.5">
-            <Icon name="sparkles" size={13} /> Rewrite tighter
-          </button>
-          <span className="text-mute">·</span>
-          <button className="text-mute hover:text-ink flex items-center gap-1.5">
-            <Icon name="sparkles" size={13} /> Make it warmer
-          </button>
-        </div>
-      </div>
-
-      <Card className="mt-4 overflow-hidden">
-        <div className="px-5 py-3 border-b border-line flex items-center justify-between bg-[#FBFAF7]">
-          <span className="text-[12.5px] text-mute">
-            To: <span className="text-ink font-medium">careers@linear.app</span>
-            <Dot /> Re: Senior Product Engineer, Workflows
-          </span>
-          <span
-            className={`text-[12px] tabular-nums font-medium ${tooLong ? "text-error" : ""}`}
-            style={!tooLong ? { color: "var(--accent-hi)" } : undefined}
-          >
-            {words} / 250 words {tooLong && "· too long"}
-          </span>
-        </div>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={14}
-          className="w-full p-6 text-[13.5px] lh-body bg-white outline-none resize-none focus:bg-white"
-          style={{ fontFamily: "Inter", whiteSpace: "pre-wrap" }}
-        />
+function ReviewDiff({ sections }: { sections: TailoredSection[] }) {
+  if (sections.length === 0) {
+    return (
+      <Card className="p-8 text-center">
+        <p className="text-[13.5px] text-mute">No tailoring changes — your resume matched as-is.</p>
       </Card>
-    </section>
-  );
-}
-
-/* ---------- Screener Q&A ---------- */
-function ReviewScreeners() {
-  const [open, setOpen] = useState<Set<number>>(new Set([3])); // medium confidence one open
-  const toggle = (i: number) => {
-    const next = new Set(open);
-    if (next.has(i)) next.delete(i);
-    else next.add(i);
-    setOpen(next);
-  };
+    );
+  }
   return (
-    <section className="mt-10">
-      <div className="flex items-center justify-between">
-        <div>
-          <SectionLabel>Screener questions · {REVIEW_SCREENERS.length} found</SectionLabel>
-          <h2 className="mt-2 text-[20px] font-semibold tracking-[-0.018em]">
-            I drafted answers from your profile.{" "}
-            <span className="text-mute font-normal">2 are worth a second look.</span>
-          </h2>
-        </div>
-        <div className="flex items-center gap-4 text-[12px] text-mute">
-          <LegendDot color="var(--accent)" label="High confidence" />
-          <LegendDot color="#D97706" label="Worth reviewing" />
-          <LegendDot color="#DC2626" label="Low confidence" />
-        </div>
-      </div>
-
-      <div className="mt-5 space-y-3">
-        {REVIEW_SCREENERS.map((s, i) => (
-          <ScreenerCard key={i} q={s} open={open.has(i)} onToggle={() => toggle(i)} />
+    <>
+      <SectionLabel className="mb-3">Resume tailoring</SectionLabel>
+      <div className="space-y-4">
+        {sections.map((s, si) => (
+          <Card key={`${s.section_id}-${si}`} className="p-5">
+            <div className="text-[12.5px] uppercase tracking-[0.06em] font-semibold text-mute mb-3">
+              Section {si + 1}
+            </div>
+            <ul className="space-y-3">
+              {s.bullets.map((b, bi) => (
+                <BulletDiff key={bi} b={b} />
+              ))}
+            </ul>
+          </Card>
         ))}
       </div>
-    </section>
+    </>
   );
 }
 
-const CONFIDENCE: Record<Confidence, { label: string; color: string; bg: string; dot: string }> = {
-  high: { label: "High confidence", color: "var(--accent-hi)", bg: "var(--accent-soft)", dot: "var(--accent)" },
-  medium: { label: "Worth reviewing", color: "#A86412", bg: "#FDF3E1", dot: "#D97706" },
-  low: { label: "Low confidence", color: "#9C2222", bg: "#FBE9E9", dot: "#DC2626" },
-};
+function BulletDiff({ b }: { b: TailoredBullet }) {
+  const dropped = b.rewritten === null;
+  const added = b.original === null;
+  const changed = !dropped && !added && b.original !== b.rewritten;
 
-function ScreenerCard({ q, open, onToggle }: { q: ScreenerQ; open: boolean; onToggle: () => void }) {
-  const c = CONFIDENCE[q.confidence];
-  const lowOrMed = q.confidence !== "high";
   return (
-    <Card
-      className="overflow-hidden"
-      style={lowOrMed ? { borderColor: q.confidence === "low" ? "#F4D4D4" : "#F1E2C1" } : undefined}
-    >
-      <button onClick={onToggle} className="w-full p-4 flex items-start gap-4 text-left">
-        <span
-          className="mt-0.5 inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-sm text-[10.5px] font-semibold uppercase tracking-[0.06em] shrink-0"
-          style={{ background: c.bg, color: c.color }}
-        >
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: c.dot }} />
-          {c.label}
-        </span>
-        <div className="flex-1 min-w-0">
-          <div className="text-[14px] font-medium">{q.q}</div>
-          {!open && <div className="text-[13px] text-mute mt-1 lh-body line-clamp-1">{q.a}</div>}
-        </div>
+    <li className="grid grid-cols-12 gap-4 text-[13.5px] leading-[1.55]">
+      <div className="col-span-5">
+        {b.original ? (
+          <span className={dropped ? "text-ink-faint line-through" : "text-ink-soft"}>
+            {b.original}
+          </span>
+        ) : (
+          <span className="text-ink-faint italic">(new)</span>
+        )}
+      </div>
+      <div className="col-span-1 flex items-start justify-center pt-1">
         <Icon
-          name="chevron-down"
-          size={16}
-          className={`text-mute shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+          name="arrow-right"
+          size={14}
+          className={dropped ? "text-ink-faint" : "text-accent"}
         />
-      </button>
-
-      {open && (
-        <div className="px-4 pb-4 anim-pop">
-          <div className="ml-[140px] pl-5 border-l-2" style={{ borderColor: c.dot }}>
-            <textarea
-              defaultValue={q.a}
-              rows={Math.max(3, Math.ceil(q.a.length / 90))}
-              className="w-full p-3 rounded-sm border border-line bg-[#FBFAF7] text-[13.5px] lh-body outline-none focus:bg-white focus-ring"
-            />
-            <div className="mt-3 flex items-center justify-between text-[12px]">
-              <div className="flex items-center gap-3">
-                <button className="text-mute hover:text-ink flex items-center gap-1.5">
-                  <Icon name="sparkles" size={12} /> Regenerate
-                </button>
-                <button className="text-mute hover:text-ink flex items-center gap-1.5">
-                  <Icon name="edit" size={12} /> Use a previous answer
-                </button>
-              </div>
-              {lowOrMed && (
-                <span className="text-[12px]" style={{ color: c.color }}>
-                  {q.confidence === "low"
-                    ? "I guessed here — please double-check."
-                    : "Your call — I leaned conservative."}
-                </span>
-              )}
-            </div>
+      </div>
+      <div className="col-span-6">
+        {b.rewritten ? (
+          <span
+            className={
+              added ? "text-ink" : changed ? "text-ink border-b border-accent" : "text-ink"
+            }
+          >
+            {b.rewritten}
+          </span>
+        ) : (
+          <span className="text-ink-faint italic">(dropped)</span>
+        )}
+        {b.reasoning && (
+          <div className="text-[12px] text-ink-soft mt-1.5 flex items-start gap-1.5">
+            <Icon name="info" size={11} className="mt-0.5 shrink-0" />
+            {b.reasoning}
           </div>
-        </div>
-      )}
-    </Card>
+        )}
+      </div>
+    </li>
   );
 }
 
-/* ---------- Action bar (sticky bottom) ---------- */
+function ReviewCover({
+  value,
+  onChange,
+  originalLength,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  originalLength: number;
+}) {
+  const words = value.trim().split(/\s+/).filter(Boolean).length;
+  return (
+    <>
+      <SectionLabel className="mb-3 mt-10">Cover letter</SectionLabel>
+      <Card className="p-5">
+        <Textarea value={value} onChange={(e) => onChange(e.target.value)} rows={12} />
+        <div className="mt-3 flex items-center justify-between text-[12px] text-mute">
+          <span>
+            <span className={words > 250 ? "text-error font-medium" : "text-ink"}>{words}</span> /
+            250 words {originalLength ? `· Claude wrote ${originalLength}` : ""}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Icon name="sparkles" size={12} style={{ color: "var(--accent)" }} />
+            Drafted in your voice
+          </span>
+        </div>
+      </Card>
+    </>
+  );
+}
+
+function ReviewScreeners({ answers }: { answers: ScreenerAnswer[] }) {
+  return (
+    <>
+      <SectionLabel className="mb-3 mt-10">Screener answers</SectionLabel>
+      <div className="space-y-3">
+        {answers.map((a, i) => (
+          <Card
+            key={i}
+            className="p-4"
+            style={
+              a.confidence === "low"
+                ? { borderColor: "rgba(217, 119, 6, 0.45)" }
+                : undefined
+            }
+          >
+            <div className="text-[13px] font-medium text-ink">{a.question}</div>
+            <div className="text-[13.5px] text-ink/85 mt-1.5 lh-body">{a.answer}</div>
+            <div className="mt-2 flex items-center gap-1.5 text-[11.5px]">
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full font-medium"
+                style={
+                  a.confidence === "high"
+                    ? { background: "#E7F4EA", color: "#15803D" }
+                    : a.confidence === "medium"
+                      ? { background: "#FBF1DC", color: "#92400E" }
+                      : { background: "#FCEEDD", color: "#9A3412" }
+                }
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={
+                    a.confidence === "high"
+                      ? { background: "#22C55E" }
+                      : a.confidence === "medium"
+                        ? { background: "#D97706" }
+                        : { background: "#F97316" }
+                  }
+                />
+                {a.confidence === "low"
+                  ? "Low confidence — please review"
+                  : a.confidence === "medium"
+                    ? "Medium confidence"
+                    : "High confidence"}
+              </span>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function ReviewActionBar({ onApprove }: { onApprove: () => void }) {
   return (
-    <div className="fixed bottom-0 left-[244px] right-0 z-30 bg-white/95 backdrop-blur border-t border-line">
+    <div className="fixed bottom-0 right-0 left-[244px] z-30 border-t border-line bg-white">
       <div className="px-10 py-3.5 max-w-[1440px] mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Icon name="check-circle" size={16} style={{ color: "var(--accent)" }} />
-          <div className="text-[13px]">
-            Resume rewritten <Dot /> Cover letter drafted <Dot /> 6 of 6 screeners answered
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+        <Link href="/matches">
           <Button variant="ghost" leading={<Icon name="x" size={14} />}>
             Skip
           </Button>
-          <Button variant="secondary">Save draft</Button>
-          <Button variant="primary" size="lg" onClick={onApprove} leading={<Icon name="paper-plane" size={14} />}>
+        </Link>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" leading={<Icon name="edit" size={13} />}>
+            Edit before sending
+          </Button>
+          <Button variant="primary" onClick={onApprove} leading={<Icon name="check" size={14} />}>
             Approve &amp; submit
           </Button>
         </div>
@@ -341,3 +366,11 @@ function ReviewActionBar({ onApprove }: { onApprove: () => void }) {
     </div>
   );
 }
+
+function Dot() {
+  return <span className="text-[#D6D3CC] mx-1.5">·</span>;
+}
+
+// Keep ReactNode import used
+const _keepImport: ReactNode = null;
+void _keepImport;
