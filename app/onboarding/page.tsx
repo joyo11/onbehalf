@@ -29,13 +29,71 @@ const ONBOARDING_STEPS = [
   { id: 7, label: "Connect Gmail" },
 ];
 
+export type AboutForm = {
+  name: string;
+  pronouns: string;
+  email: string;
+  phone: string;
+  linkedin: string;
+  site: string;
+  location: string;
+  timezone: string;
+};
+
+const EMPTY_ABOUT: AboutForm = {
+  name: "",
+  pronouns: "",
+  email: "",
+  phone: "",
+  linkedin: "",
+  site: "",
+  location: "",
+  timezone: "",
+};
+
 export default function OnboardingScreen() {
   const router = useRouter();
   const [step, setStep] = useState<number>(1);
   const [parsed, setParsed] = useState<ParsedResume | null>(null);
+  const [about, setAbout] = useState<AboutForm>(EMPTY_ABOUT);
   const total = ONBOARDING_STEPS.length;
 
+  // When a resume parses, seed any About fields that are still blank.
+  // Don't overwrite anything the user has typed.
+  function handleParsed(p: ParsedResume | null) {
+    setParsed(p);
+    if (!p) return;
+    const c = p.contact;
+    setAbout((prev) => ({
+      ...prev,
+      name: prev.name || c.name || "",
+      email: prev.email || c.email || "",
+      phone: prev.phone || c.phone || "",
+      linkedin: prev.linkedin || c.linkedin || "",
+      site: prev.site || c.portfolio || c.github || "",
+      location: prev.location || c.location || "",
+    }));
+  }
+
+  const canContinue = (() => {
+    if (step === 1) return parsed !== null;
+    if (step === 2) {
+      const req: (keyof AboutForm)[] = [
+        "name",
+        "email",
+        "phone",
+        "linkedin",
+        "site",
+        "location",
+        "timezone",
+      ];
+      return req.every((k) => about[k].trim() !== "");
+    }
+    return true;
+  })();
+
   const next = () => {
+    if (!canContinue) return;
     if (step < total) setStep(step + 1);
     else router.push("/dashboard");
   };
@@ -61,8 +119,8 @@ export default function OnboardingScreen() {
 
       <div className="max-w-[760px] mx-auto px-6 py-14">
         <div key={step} className="anim-pop">
-          {step === 1 && <OnbResume parsed={parsed} onParsed={setParsed} />}
-          {step === 2 && <OnbAbout parsed={parsed} />}
+          {step === 1 && <OnbResume parsed={parsed} onParsed={handleParsed} />}
+          {step === 2 && <OnbAbout parsed={parsed} form={about} setForm={setAbout} />}
           {step === 3 && <OnbRoles />}
           {step === 4 && <OnbExperience />}
           {step === 5 && <OnbPreferences />}
@@ -80,8 +138,19 @@ export default function OnboardingScreen() {
             Back
           </Button>
           <div className="flex items-center gap-3">
-            {step < total && <button className="text-[13px] text-mute hover:text-ink">Skip for now</button>}
-            <Button onClick={next} variant="primary" trailing={<Icon name="arrow-right" size={14} />}>
+            {!canContinue && (
+              <span className="text-[12.5px] text-mute">
+                {step === 1
+                  ? "Upload your resume to continue"
+                  : "Fill in the required fields to continue"}
+              </span>
+            )}
+            <Button
+              onClick={next}
+              variant="primary"
+              disabled={!canContinue}
+              trailing={<Icon name="arrow-right" size={14} />}
+            >
               {step === total ? "Finish & go to dashboard" : "Continue"}
             </Button>
           </div>
@@ -381,20 +450,18 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 /* ---------- Step 2: About ---------- */
-function OnbAbout({ parsed }: { parsed: ParsedResume | null }) {
+function OnbAbout({
+  parsed,
+  form,
+  setForm,
+}: {
+  parsed: ParsedResume | null;
+  form: AboutForm;
+  setForm: React.Dispatch<React.SetStateAction<AboutForm>>;
+}) {
   const c = parsed?.contact;
-  const [form, setForm] = useState({
-    name: c?.name ?? "",
-    pronouns: "",
-    email: c?.email ?? "",
-    phone: c?.phone ?? "",
-    linkedin: c?.linkedin ?? "",
-    site: c?.portfolio ?? c?.github ?? "",
-    location: c?.location ?? "",
-    timezone: "",
-  });
   const set =
-    <K extends keyof typeof form>(k: K) =>
+    <K extends keyof AboutForm>(k: K) =>
     (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((f) => ({ ...f, [k]: e.target.value }));
 
