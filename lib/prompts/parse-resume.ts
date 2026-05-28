@@ -72,8 +72,10 @@ export const PARSE_RESUME_SCHEMA = {
           skill: { type: "string" },
           years: { type: ["number", "null"] },
           level: {
-            type: ["string", "null"],
-            enum: ["Beginner", "Intermediate", "Advanced", "Expert", null],
+            anyOf: [
+              { type: "string", enum: ["Beginner", "Intermediate", "Advanced", "Expert"] },
+              { type: "null" },
+            ],
           },
         },
         required: ["skill", "years", "level"],
