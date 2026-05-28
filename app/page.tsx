@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, SectionLabel } from "@/components/ui/card";
 import { Icon, type IconName } from "@/components/ui/icon";
+import { MatchScore } from "@/components/ui/match-score";
+import { Monogram } from "@/components/ui/monogram";
+import { StatusPill } from "@/components/ui/status-pill";
 import { Wordmark } from "@/components/ui/wordmark";
+import type { Status } from "@/lib/types";
 
 export default function LandingScreen() {
   return (
@@ -51,13 +56,13 @@ function LandingHero() {
         style={{ background: "radial-gradient(circle, rgba(13,148,136,0.10) 0%, rgba(13,148,136,0) 60%)" }}
         aria-hidden
       />
-      <div className="relative max-w-[1120px] mx-auto px-6 pt-24 pb-28">
-        <div className="max-w-[640px]">
+      <div className="relative max-w-[1120px] mx-auto px-6 pt-20 pb-24 grid grid-cols-12 gap-12">
+        <div className="col-span-7 flex flex-col justify-center">
           <h1 className="text-[64px] font-semibold tracking-[-0.025em]" style={{ lineHeight: 1.04 }}>
             AI that <span className="italic" style={{ color: "var(--accent-hi)", fontWeight: 500 }}>applies</span> to jobs
             <br /> on your behalf.
           </h1>
-          <p className="mt-6 text-[18px] text-mute lh-body max-w-[560px]">
+          <p className="mt-6 text-[18px] text-mute lh-body max-w-[520px]">
             Upload your resume. Tell us what you want. Wake up to confirmation emails.
             Onbehalf tailors every submission and only forwards the ones worth your time.
           </p>
@@ -77,8 +82,101 @@ function LandingHero() {
             <span className="flex items-center gap-1.5"><Icon name="check" size={14} /> Read-only Gmail access</span>
           </div>
         </div>
+
+        <div className="col-span-5 flex items-center">
+          <CyclingApplicationCard />
+        </div>
       </div>
     </section>
+  );
+}
+
+/* ---------- Cycling application card ----------
+   One application card whose status cycles through the lifecycle.
+   Demonstrates the agent loop without faking the whole product. */
+
+type StageKey = "queued" | "tailoring" | "submitting" | "submitted" | "confirmed";
+
+type Stage = {
+  status: Status;
+  note: string;
+  noteIcon: IconName;
+};
+
+const STAGES: Stage[] = [
+  { status: "queued",     note: "In queue · est. 2 min",       noteIcon: "clock" },
+  { status: "tailoring",  note: "Rewriting 4 bullets · 12 sec", noteIcon: "sparkles" },
+  { status: "submitting", note: "Filling 23-question form",     noteIcon: "paper-plane" },
+  { status: "submitted",  note: "Awaiting confirmation email",  noteIcon: "mail" },
+  { status: "confirmed",  note: "Confirmation #LIN-2148 received", noteIcon: "check-circle" },
+];
+
+function CyclingApplicationCard() {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setI((n) => (n + 1) % STAGES.length), 2200);
+    return () => clearInterval(id);
+  }, []);
+
+  const stage = STAGES[i];
+
+  return (
+    <div className="relative w-full">
+      <Card className="overflow-hidden shadow-float p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <Monogram name="Linear" size={40} />
+            <div className="min-w-0">
+              <div className="text-[11px] uppercase tracking-[0.06em] font-semibold text-mute mb-1">
+                Linear
+              </div>
+              <div className="text-[14.5px] font-semibold text-ink leading-snug truncate">
+                Senior Product Engineer, Workflows
+              </div>
+              <div className="text-[12px] text-mute mt-0.5">
+                Remote (US) · $185k – $230k
+              </div>
+            </div>
+          </div>
+          <MatchScore score={92} size={44} stroke={4} />
+        </div>
+
+        <div className="mt-5 pt-4 border-t border-line">
+          <div className="flex items-center justify-between gap-3">
+            <div key={stage.status} className="anim-slide-in">
+              <StatusPill status={stage.status} />
+            </div>
+            <span className="text-[11px] tabular-nums text-mute">
+              {String(i + 1).padStart(2, "0")} / {String(STAGES.length).padStart(2, "0")}
+            </span>
+          </div>
+          <div
+            key={`${stage.status}-note`}
+            className="mt-3 flex items-center gap-1.5 text-[12.5px] text-ink-soft anim-slide-in"
+          >
+            <Icon name={stage.noteIcon} size={13} style={{ color: "var(--accent)" }} />
+            {stage.note}
+          </div>
+        </div>
+      </Card>
+
+      <div
+        className="absolute -bottom-4 -left-4 z-10 hidden md:block pointer-events-none"
+        style={{ animation: "pulseFloat 2.2s ease-in-out infinite" }}
+      >
+        <div
+          className="flex items-center gap-1.5 px-2 py-1 rounded-full text-[10.5px] font-medium shadow-pop"
+          style={{ background: "#FFFFFF", color: "var(--accent-hi)", border: "1px solid #E7E5E0" }}
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ background: "var(--accent)", animation: "pulse-dot 1.6s ease-in-out infinite" }}
+          />
+          live
+        </div>
+      </div>
+      <style>{`@keyframes pulseFloat { 0%,100%{ transform: translateY(0); } 50%{ transform: translateY(-3px); } }`}</style>
+    </div>
   );
 }
 
