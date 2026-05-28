@@ -24,6 +24,36 @@ function isValidLinkedIn(url: string): boolean {
   return url.trim().toLowerCase().includes("linkedin.com");
 }
 
+function isValidGitHub(url: string): boolean {
+  return url.trim().toLowerCase().includes("github.com");
+}
+
+// Keywords that signal a real job title. "Suha" doesn't contain any → rejected.
+// "Software Engineer" contains "engineer" → accepted.
+const ROLE_KEYWORDS = [
+  "engineer", "engineering", "developer", "programmer", "coder", "architect",
+  "designer", "design", "ux", "ui",
+  "manager", "management", "lead", "director", "vp", "head", "chief", "officer",
+  "principal", "staff", "senior", "junior", "associate",
+  "founder", "founding", "cofounder",
+  "scientist", "analyst", "researcher", "research",
+  "product", "data", "ml", "ai", "platform", "infrastructure", "infra", "security",
+  "marketing", "sales", "growth", "operations", "ops", "finance",
+  "intern", "internship", "specialist", "consultant", "advocate",
+  "swe", "sre", "devops", "qa", "tester", "tester",
+  "pm", "tpm", "epm",
+  "writer", "editor", "content",
+  "recruiter", "recruiting",
+  "support", "success",
+  "accountant", "lawyer", "doctor", "nurse", "teacher", "professor",
+];
+
+function isValidRole(s: string): boolean {
+  const t = s.trim().toLowerCase();
+  if (t.length < 3) return false;
+  return ROLE_KEYWORDS.some((kw) => t.includes(kw));
+}
+
 const ONBOARDING_STEPS = [
   { id: 1, label: "Resume" },
   { id: 2, label: "About you" },
@@ -67,6 +97,7 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState<number>(1);
   const [parsed, setParsed] = useState<ParsedResume | null>(null);
   const [about, setAbout] = useState<AboutForm>(EMPTY_ABOUT);
+  const [roles, setRoles] = useState<string[]>([...TARGET_ROLES]);
   const total = ONBOARDING_STEPS.length;
 
   // When a resume parses, seed any About fields that are still blank.
@@ -108,8 +139,10 @@ export default function OnboardingScreen() {
       } else {
         if (!about.city.trim()) return false;
       }
+      if (about.github.trim() && !isValidGitHub(about.github)) return false;
       return true;
     }
+    if (step === 3) return roles.length >= 1;
     return true;
   })();
 
@@ -142,7 +175,7 @@ export default function OnboardingScreen() {
         <div key={step} className="anim-pop">
           {step === 1 && <OnbResume parsed={parsed} onParsed={handleParsed} />}
           {step === 2 && <OnbAbout parsed={parsed} form={about} setForm={setAbout} />}
-          {step === 3 && <OnbRoles />}
+          {step === 3 && <OnbRoles roles={roles} setRoles={setRoles} />}
           {step === 4 && <OnbExperience />}
           {step === 5 && <OnbPreferences />}
           {step === 6 && <OnbVoice />}
@@ -492,6 +525,7 @@ function OnbAbout({
 
   const fromResume = (v: string | null | undefined) => Boolean(v);
   const linkedinInvalid = form.linkedin.trim().length > 0 && !isValidLinkedIn(form.linkedin);
+  const githubInvalid = form.github.trim().length > 0 && !isValidGitHub(form.github);
 
   return (
     <div>
@@ -537,7 +571,14 @@ function OnbAbout({
         </Field>
         <Field
           label="GitHub (optional)"
-          hint={fromResume(c?.github) ? "From your resume" : undefined}
+          hint={
+            githubInvalid
+              ? "Must be a GitHub URL (e.g. github.com/yourname)"
+              : fromResume(c?.github)
+                ? "From your resume"
+                : undefined
+          }
+          hintTone={githubInvalid ? "error" : "neutral"}
         >
           <Input
             value={form.github}
@@ -657,9 +698,15 @@ function Field({
 }
 
 /* ---------- Step 3: Target roles ---------- */
-function OnbRoles() {
-  const [roles, setRoles] = useState<string[]>([...TARGET_ROLES]);
+function OnbRoles({
+  roles,
+  setRoles,
+}: {
+  roles: string[];
+  setRoles: React.Dispatch<React.SetStateAction<string[]>>;
+}) {
   const [input, setInput] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
   const SUGGESTIONS = [
     "Senior Software Engineer",
     "Full-stack Engineer",
@@ -668,8 +715,20 @@ function OnbRoles() {
   ];
   const addChip = (v: string) => {
     const t = v.trim();
-    if (t && !roles.includes(t)) setRoles([...roles, t]);
+    if (!t) return;
+    if (roles.includes(t)) {
+      setError(`"${t}" is already in your list.`);
+      return;
+    }
+    if (!isValidRole(t)) {
+      setError(
+        `"${t}" doesn't look like a job title. Try something like "Software Engineer", "Product Designer", or "Marketing Manager".`,
+      );
+      return;
+    }
+    setRoles([...roles, t]);
     setInput("");
+    setError(null);
   };
   return (
     <div>
@@ -678,27 +737,43 @@ function OnbRoles() {
         title="What roles are you looking for?"
         body="Add 2–4 titles. We'll search exact and adjacent variants — e.g. 'Senior Product Engineer' will also match 'Senior PE' and 'Senior SWE, Product'."
       />
-      <Card className="p-3">
+      <Card className={`p-3 ${error ? "border-error/40" : ""}`}>
         <div className="flex flex-wrap items-center gap-2">
           {roles.map((r) => (
-            <Chip key={r} tone="accent" onRemove={() => setRoles(roles.filter((x) => x !== r))}>
+            <Chip
+              key={r}
+              tone="accent"
+              onRemove={() => {
+                setRoles(roles.filter((x) => x !== r));
+                setError(null);
+              }}
+            >
               {r}
             </Chip>
           ))}
           <input
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              if (error) setError(null);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
                 addChip(input);
               }
             }}
-            placeholder="Add a role…"
+            placeholder={roles.length === 0 ? "Type a role and press Enter…" : "Add a role…"}
             className="flex-1 min-w-[160px] bg-transparent text-sm outline-none placeholder:text-mute py-1"
           />
         </div>
       </Card>
+      {error && (
+        <div className="mt-2 flex items-start gap-2 text-[12.5px] text-error">
+          <Icon name="alert-circle" size={13} className="mt-0.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
       <div className="mt-5">
         <SectionLabel className="mb-2.5">Try also</SectionLabel>
         <div className="flex flex-wrap gap-2">
