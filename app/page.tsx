@@ -51,29 +51,31 @@ function LandingHero() {
         style={{ background: "radial-gradient(circle, rgba(13,148,136,0.10) 0%, rgba(13,148,136,0) 60%)" }}
         aria-hidden
       />
-      <div className="relative max-w-[760px] mx-auto px-6 pt-24 pb-28 flex flex-col">
-        <h1 className="text-[64px] font-semibold tracking-[-0.025em]" style={{ lineHeight: 1.04 }}>
-          AI that <span className="italic" style={{ color: "var(--accent-hi)", fontWeight: 500 }}>applies</span> to jobs
-          <br /> on your behalf.
-        </h1>
-        <p className="mt-6 text-[18px] text-mute lh-body max-w-[560px]">
-          Upload your resume. Tell us what you want. Wake up to confirmation emails.
-          Onbehalf tailors every submission and only forwards the ones worth your time.
-        </p>
-        <div className="mt-8 flex items-center gap-3">
-          <Link href="/onboarding">
-            <Button size="lg" variant="primary" trailing={<Icon name="arrow-right" size={15} />}>
-              Get started — it&apos;s free
+      <div className="relative max-w-[1120px] mx-auto px-6 pt-24 pb-28">
+        <div className="max-w-[640px]">
+          <h1 className="text-[64px] font-semibold tracking-[-0.025em]" style={{ lineHeight: 1.04 }}>
+            AI that <span className="italic" style={{ color: "var(--accent-hi)", fontWeight: 500 }}>applies</span> to jobs
+            <br /> on your behalf.
+          </h1>
+          <p className="mt-6 text-[18px] text-mute lh-body max-w-[560px]">
+            Upload your resume. Tell us what you want. Wake up to confirmation emails.
+            Onbehalf tailors every submission and only forwards the ones worth your time.
+          </p>
+          <div className="mt-8 flex items-center gap-3">
+            <Link href="/onboarding">
+              <Button size="lg" variant="primary" trailing={<Icon name="arrow-right" size={15} />}>
+                Get started — it&apos;s free
+              </Button>
+            </Link>
+            <Button variant="secondary" size="lg" leading={<Icon name="play" size={14} />}>
+              Watch 90-second demo
             </Button>
-          </Link>
-          <Button variant="secondary" size="lg" leading={<Icon name="play" size={14} />}>
-            Watch 90-second demo
-          </Button>
-        </div>
-        <div className="mt-8 flex items-center gap-6 text-[12.5px] text-mute">
-          <span className="flex items-center gap-1.5"><Icon name="check" size={14} /> No card required</span>
-          <span className="flex items-center gap-1.5"><Icon name="check" size={14} /> 5 applications free</span>
-          <span className="flex items-center gap-1.5"><Icon name="check" size={14} /> Read-only Gmail access</span>
+          </div>
+          <div className="mt-8 flex items-center gap-6 text-[12.5px] text-mute">
+            <span className="flex items-center gap-1.5"><Icon name="check" size={14} /> No card required</span>
+            <span className="flex items-center gap-1.5"><Icon name="check" size={14} /> 5 applications free</span>
+            <span className="flex items-center gap-1.5"><Icon name="check" size={14} /> Read-only Gmail access</span>
+          </div>
         </div>
       </div>
     </section>
