@@ -1,5 +1,6 @@
 "use client";
 
+import { useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon, type IconName } from "./ui/icon";
@@ -98,21 +99,37 @@ export function Sidebar() {
         ))}
       </nav>
 
-      <div className="p-3 border-t border-line/60">
-        <button className="w-full flex items-center gap-2.5 p-2 rounded-ctrl hover:bg-black/[0.04] transition-colors">
-          <div
-            className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[12px] font-semibold"
-            style={{ background: "var(--accent)" }}
-          >
-            MC
-          </div>
-          <div className="text-left min-w-0 flex-1">
-            <div className="text-[12.5px] font-medium truncate">Maya Chen</div>
-            <div className="text-[11px] text-mute truncate">Pro plan</div>
-          </div>
-          <Icon name="settings" size={13} className="text-mute" />
-        </button>
-      </div>
+      <SidebarUser />
     </aside>
+  );
+}
+
+function SidebarUser() {
+  const { isLoaded, user } = useUser();
+  if (!isLoaded || !user) return null;
+  const name = user.fullName ?? user.firstName ?? user.primaryEmailAddress?.emailAddress ?? "You";
+  const email = user.primaryEmailAddress?.emailAddress ?? "";
+  const initials =
+    (user.firstName?.[0] ?? name[0] ?? "U").toUpperCase() +
+    (user.lastName?.[0] ?? name.split(" ")[1]?.[0] ?? "").toUpperCase();
+  return (
+    <div className="p-3 border-t border-line/60">
+      <Link
+        href="/settings"
+        className="w-full flex items-center gap-2.5 p-2 rounded-ctrl hover:bg-black/[0.04] transition-colors"
+      >
+        <div
+          className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[12px] font-semibold"
+          style={{ background: "var(--accent)" }}
+        >
+          {initials || "U"}
+        </div>
+        <div className="text-left min-w-0 flex-1">
+          <div className="text-[12.5px] font-medium truncate">{name}</div>
+          <div className="text-[11px] text-mute truncate">{email}</div>
+        </div>
+        <Icon name="settings" size={13} className="text-mute" />
+      </Link>
+    </div>
   );
 }
