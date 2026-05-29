@@ -640,21 +640,62 @@ async function fillReactSelect(
 
     let bestIdx = -1;
     let bestScore = 0;
+
+    // 1. EXACT match for any candidate beats everything else. This is the
+    //    fix for the "answer 'No', form has 'Yes, F-1 Visa OPT (USA)'
+    //    but no plain 'No'" case — exact match prevents accidentally
+    //    picking a longer option that contains 'Yes' / 'No' as a word.
     for (const cand of candidates) {
+      const exact = optionTexts.findIndex((t) => t.trim().toLowerCase() === cand.trim().toLowerCase());
+      if (exact >= 0) {
+        bestIdx = exact;
+        bestScore = 999;
+        break;
+      }
+    }
+
+    // 2. For yes/no answers, prefer options that START with the same
+    //    polarity word — and explicitly avoid options that start with the
+    //    OPPOSITE polarity. This stops "No" from selecting "Yes, ...".
+    if (bestIdx < 0 && /^(yes|no)$/i.test(answer.trim())) {
+      const want = answer.trim().toLowerCase();
+      const opposite = want === "yes" ? "no" : "yes";
+      let polarityIdx = -1;
+      let polarityLen = Number.MAX_SAFE_INTEGER;
       for (let i = 0; i < optionTexts.length; i++) {
-        const t = optionTexts[i];
+        const t = optionTexts[i].trim().toLowerCase();
         if (!t) continue;
-        const score = textSimilarity(t, cand);
-        if (score > bestScore) {
-          bestScore = score;
-          bestIdx = i;
+        if (new RegExp(`^${opposite}\\b`).test(t)) continue;
+        if (new RegExp(`^${want}\\b`).test(t)) {
+          // Prefer shorter matches ("No" over "No, I am not currently…").
+          if (t.length < polarityLen) {
+            polarityLen = t.length;
+            polarityIdx = i;
+          }
         }
-        // Exact-prefix bump — covers "Decline to Self-Identify" vs
-        // "Decline to self-identify".
-        if (t.toLowerCase().startsWith(cand.toLowerCase().slice(0, 8))) {
-          if (score + 0.5 > bestScore) {
-            bestScore = score + 0.5;
+      }
+      if (polarityIdx >= 0) {
+        bestIdx = polarityIdx;
+        bestScore = 999;
+      }
+    }
+
+    // 3. Fall back to fuzzy keyword overlap + prefix bonus.
+    if (bestIdx < 0) {
+      for (const cand of candidates) {
+        for (let i = 0; i < optionTexts.length; i++) {
+          const t = optionTexts[i];
+          if (!t) continue;
+          const score = textSimilarity(t, cand);
+          if (score > bestScore) {
+            bestScore = score;
             bestIdx = i;
+          }
+          if (t.toLowerCase().startsWith(cand.toLowerCase().slice(0, 8))) {
+            if (score + 0.5 > bestScore) {
+              bestScore = score + 0.5;
+              bestIdx = i;
+            }
           }
         }
       }
