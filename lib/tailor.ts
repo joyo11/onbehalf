@@ -29,6 +29,61 @@ const DEFAULT_SCREENERS = [
   { q: "When could you start?" },
 ];
 
+/**
+ * Wrap Claude's body output in the formal business-letter format we ship:
+ *
+ *   Full Name
+ *   Location
+ *   Phone Email
+ *
+ *   Month Day, Year
+ *
+ *   Hiring Manager
+ *   {Company}
+ *
+ *   Dear Hiring Manager,
+ *
+ *   {body}
+ *
+ *   Sincerely,
+ *   Full Name
+ */
+function formatCoverLetter(opts: {
+  body: string;
+  fullName: string;
+  location: string | null;
+  phone: string | null;
+  email: string;
+  companyName: string;
+}): string {
+  const dateStr = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const contactLine = [opts.phone, opts.email].filter(Boolean).join(" ").trim();
+
+  const header = [
+    opts.fullName,
+    opts.location ?? "",
+    contactLine,
+    "",
+    dateStr,
+    "",
+    "Hiring Manager",
+    opts.companyName,
+    "",
+    "Dear Hiring Manager,",
+  ]
+    .filter((line) => line !== "" || true) // keep empty lines as spacing
+    .join("\n");
+
+  const body = opts.body.trim();
+  const footer = `\n\nSincerely,\n${opts.fullName}`;
+
+  return `${header}\n\n${body}${footer}`;
+}
+
 export type TailorPayload = {
   job: {
     id: string;
@@ -156,6 +211,19 @@ export async function tailorForJob(user: User, jobId: string): Promise<TailorPay
     ),
   ]);
 
+  // Wrap Claude's body in the formal letter format. We override the model's
+  // raw output rather than asking Claude to produce headers/dates itself
+  // (cheaper, deterministic, and uses real profile data).
+  const formattedBody = coverLetter.cover_letter;
+  const formatted = formatCoverLetter({
+    body: formattedBody,
+    fullName: candidateName,
+    location: profileRow.location,
+    phone: profileRow.phone,
+    email: user.email,
+    companyName: jobRow.company,
+  });
+
   return {
     job: {
       id: jobRow.id,
@@ -165,7 +233,11 @@ export async function tailorForJob(user: User, jobId: string): Promise<TailorPay
       applyUrl: jobRow.applyUrl,
     },
     tailoring,
-    coverLetter,
+    coverLetter: {
+      ...coverLetter,
+      cover_letter: formatted,
+      word_count: formatted.split(/\s+/).filter(Boolean).length,
+    },
     screeners,
   };
 }
