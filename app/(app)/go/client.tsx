@@ -36,6 +36,7 @@ const BATCH_OPTIONS: number[] = [5, 10, 20, 50];
 export default function GoClient({ summary }: { summary: GoSummary }) {
   const router = useRouter();
   const [batchSize, setBatchSize] = useState<number>(10);
+  const [tailorPerRole, setTailorPerRole] = useState<boolean>(true);
   const [starting, setStarting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +47,7 @@ export default function GoClient({ summary }: { summary: GoSummary }) {
       const res = await fetch("/api/batch-submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ batchSize }),
+        body: JSON.stringify({ batchSize, tailorPerRole }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? `Failed (${res.status})`);
@@ -182,10 +183,30 @@ export default function GoClient({ summary }: { summary: GoSummary }) {
           ))}
         </div>
 
+        <label className="mt-6 flex items-start gap-3 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={tailorPerRole}
+            onChange={(e) => setTailorPerRole(e.target.checked)}
+            className="ck mt-0.5"
+          />
+          <div>
+            <div className="text-[13.5px] font-medium text-ink">
+              Tailor my resume for every role
+            </div>
+            <div className="text-[12.5px] text-mute lh-body">
+              Claude rewrites your bullets per JD (never invents), writes a personalized cover
+              letter in your voice, and auto-answers screener questions from your profile.
+              Recommended for higher response rates.
+            </div>
+          </div>
+        </label>
+
         <div className="mt-6 flex items-center justify-between">
           <div className="text-[12.5px] text-mute lh-body max-w-md">
-            I&apos;ll find the {batchSize} jobs that best match your resume, tailor each one, and
-            submit them on your behalf. You can watch live in the tracker.
+            I&apos;ll find the {batchSize} jobs that best match your resume
+            {tailorPerRole ? ", tailor each one," : ""} and submit them on your behalf. You can
+            watch live in the tracker.
           </div>
           {error && (
             <div className="text-[12.5px] text-error flex items-center gap-1.5">

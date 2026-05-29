@@ -1,5 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Icon, type IconName } from "@/components/ui/icon";
@@ -7,7 +8,7 @@ import { Monogram } from "@/components/ui/monogram";
 import { StatusPill } from "@/components/ui/status-pill";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db/client";
-import { application, job, user as userTable } from "@/lib/db/schema";
+import { application, job, profile, user as userTable } from "@/lib/db/schema";
 import type { Status } from "@/lib/types";
 
 export default async function DashboardScreen() {
@@ -20,6 +21,20 @@ export default async function DashboardScreen() {
         </Card>
       </div>
     );
+  }
+
+  // If the user hasn't completed onboarding yet, send them through it.
+  // Heuristic: a 'complete' profile has a full name AND target roles set.
+  const [profileCheck] = await db
+    .select({
+      fullName: profile.fullName,
+      targetRoleTitles: profile.targetRoleTitles,
+    })
+    .from(profile)
+    .where(eq(profile.userId, user.id))
+    .limit(1);
+  if (!profileCheck?.fullName || profileCheck.targetRoleTitles.length === 0) {
+    redirect("/onboarding");
   }
 
   const weekAgo = new Date(Date.now() - 7 * 86400_000);
