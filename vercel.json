@@ -8,5 +8,16 @@
       "path": "/api/check-gmail",
       "schedule": "0 13 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "app/api/process-queue/route.ts": {
+      "includeFiles": "node_modules/playwright-core/**"
+    },
+    "app/api/submit/route.ts": {
+      "includeFiles": "node_modules/playwright-core/**"
+    },
+    "app/api/batch-submit/route.ts": {
+      "includeFiles": "node_modules/playwright-core/**"
+    }
+  }
 }
