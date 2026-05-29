@@ -20,9 +20,33 @@ async function unwrapToFormPage(
   page: import("playwright-core").Page,
   applicationId: string,
 ): Promise<void> {
-  // Case (a): iframe embed. Skip the parent page entirely.
+  // Case (a): are we already on the form? Check first — saves us from
+  // chasing false-positive iframes (e.g. Reddit's Greenhouse page embeds
+  // a Google API helper iframe whose src happens to contain
+  // 'greenhouse.io' in a query param, but the real form is the parent).
+  const onForm = await page
+    .locator(
+      "input[name='first_name'], input[id*='first_name'], input[type='file'][name*='resume' i]",
+    )
+    .first()
+    .isVisible({ timeout: 2000 })
+    .catch(() => false);
+  if (onForm) {
+    await logEvent(applicationId, "already_on_form", { url: page.url() });
+    return;
+  }
+
+  // Case (b): iframe embed of a Greenhouse form on a company careers page.
+  // Tight selector — only iframes whose src path actually serves a
+  // Greenhouse form (not Google iframes that happen to have greenhouse.io
+  // in their query string).
   const iframeSrc = await page
-    .locator("iframe[src*='greenhouse.io'], iframe[src*='boards.greenhouse.io']")
+    .locator(
+      "iframe[src^='https://boards.greenhouse.io/embed/'], " +
+        "iframe[src^='https://job-boards.greenhouse.io/embed/'], " +
+        "iframe[src^='https://boards.greenhouse.io/'][src*='/jobs/'], " +
+        "iframe[src^='https://job-boards.greenhouse.io/'][src*='/jobs/']",
+    )
     .first()
     .getAttribute("src")
     .catch(() => null);
@@ -40,15 +64,6 @@ async function unwrapToFormPage(
       });
     }
   }
-
-  // Case (b): is there a form already? Quick check — if first_name or any
-  // resume upload is visible, we're on the form, nothing to do.
-  const onForm = await page
-    .locator("input[name='first_name'], input[id*='first_name'], input[type='file'][name*='resume']")
-    .first()
-    .isVisible({ timeout: 1500 })
-    .catch(() => false);
-  if (onForm) return;
 
   // Look for an Apply button to click through.
   const applyButtonCandidates = [
