@@ -211,7 +211,7 @@ function OnboardingInner() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `Failed (${res.status})`);
-      router.push("/dashboard");
+      router.push("/go");
     } catch (e) {
       setFinishError(e instanceof Error ? e.message : "Failed to save profile.");
       setFinishing(false);
