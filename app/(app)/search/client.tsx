@@ -200,6 +200,20 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
               size="lg"
               className="w-full mt-6"
               onClick={() => {
+                // Persist current settings back to profile so the next visit
+                // reflects what the user just chose. Fire-and-forget so we
+                // don't block navigation on the round trip.
+                void fetch("/api/profile/search-prefs", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    targetRoleTitles: keywords,
+                    preferredLocations: locations,
+                    excludedCompanies: excluded,
+                    desiredSalaryMin: salary * 1000,
+                  }),
+                }).catch(() => {});
+
                 const params = new URLSearchParams();
                 if (keywords.length > 0) params.set("roles", keywords.join(","));
                 if (locations.length > 0) params.set("locations", locations.join(","));
