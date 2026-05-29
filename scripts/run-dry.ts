@@ -36,10 +36,9 @@ async function main() {
       target: [application.userId, application.jobId],
       set: {
         status: "queued",
-        // Clear stale tailoring so runSubmission re-tailors.
-        coverLetterText: null,
-        tailoringSummary: "",
-        customAnswersJson: null,
+        // Keep existing tailoring (coverLetterText, tailoringSummary,
+        // customAnswersJson) — re-tailoring wastes 30s of Claude time when
+        // we just want to retest the form filler.
         submittedAt: null,
         failureReason: null,
         attempts: 0,

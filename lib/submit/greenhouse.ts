@@ -49,11 +49,11 @@ export async function fillGreenhouseForm(
   }
 
   // ── Walk every labelled field and answer it ───────────────
-  await page.waitForTimeout(1000); // let everything finish rendering
+  await page.waitForTimeout(400);
   await fillAllLabelledFields(page, profile, steps);
 
   // ── Submit button ─────────────────────────────────────────
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(200);
   const submitSelectors = [
     "button[type='submit']:visible",
     "input[type='submit']:visible",
@@ -569,12 +569,12 @@ async function fillReactSelect(
 ): Promise<boolean> {
   const label = question.slice(0, 60);
   try {
-    await control.click({ timeout: 3000 });
-    await page.waitForTimeout(250);
+    await control.click({ timeout: 2000 });
+    await page.waitForTimeout(120);
 
     // The opened menu's input is now focused on the page. Type to filter.
-    await page.keyboard.type(answer.slice(0, 50), { delay: 12 });
-    await page.waitForTimeout(350);
+    await page.keyboard.type(answer.slice(0, 50), { delay: 6 });
+    await page.waitForTimeout(180);
 
     // Look for visible options. Greenhouse react-select uses
     // [class*=option] or role=option; try both.
