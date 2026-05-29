@@ -49,7 +49,9 @@ export async function POST(req: Request) {
 
   try {
     const response = await client.messages.create({
-      model: "claude-opus-4-7",
+      // Haiku for resume parsing — structured extraction with a strict
+      // schema doesn't need Opus-level reasoning; this is ~5x faster.
+      model: "claude-haiku-4-5",
       max_tokens: 16000,
       system: PARSE_RESUME_SYSTEM,
       output_config: {

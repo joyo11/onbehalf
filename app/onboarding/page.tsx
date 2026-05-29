@@ -422,7 +422,7 @@ function OnbResume({
               <div className="text-[12px] text-mute">
                 {Math.max(1, Math.round(file.size / 1024))} KB ·{" "}
                 {loading
-                  ? "Parsing with Claude…"
+                  ? "Parsing…"
                   : parseMs !== null
                     ? `Parsed in ${(parseMs / 1000).toFixed(1)}s`
                     : error
