@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,9 @@ export default async function DashboardScreen() {
       })
       .from(application)
       .where(eq(application.userId, user.id)),
+    // "Recent applications" should mean things the agent actually acted on,
+    // not raw queued rows. Filter to submittedAt IS NOT NULL so we don't
+    // surface 50 queued cards on a brand-new account.
     db
       .select({
         appId: application.id,
@@ -62,7 +65,7 @@ export default async function DashboardScreen() {
       })
       .from(application)
       .innerJoin(job, eq(application.jobId, job.id))
-      .where(eq(application.userId, user.id))
+      .where(and(eq(application.userId, user.id), isNotNull(application.submittedAt)))
       .orderBy(desc(application.submittedAt))
       .limit(5),
     db

@@ -129,8 +129,10 @@ export type TrackerRow = {
   salary: string;
   appliedAt: Date;
   appliedAtLabel: string;
-  jd: string;
+  applyUrl: string;
+  jdTextClean: string;
   resumeFile: string;
+  coverLetterText: string;
   changes: string;
   changesCount: number;
   status: Status;

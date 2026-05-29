@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/drawer";
@@ -24,7 +25,13 @@ type DocPayload = {
   row: TrackerRow;
 } | null;
 
-export default function TrackerClient({ initialRows }: { initialRows: TrackerRow[] }) {
+export default function TrackerClient({
+  initialRows,
+  masterResumeFile,
+}: {
+  initialRows: TrackerRow[];
+  masterResumeFile: string;
+}) {
   const TRACKER_ROWS = initialRows;
   const [filters, setFilters] = useState<FilterState>({
     statuses: [],
@@ -38,7 +45,6 @@ export default function TrackerClient({ initialRows }: { initialRows: TrackerRow
   const [toast, setToast] = useState<{ open: boolean; message: string; kind: "info" | "success" | "error" }>(
     { open: false, message: "", kind: "info" },
   );
-  const [empty, setEmpty] = useState(false);
 
   const filteredRows = useMemo(() => {
     return TRACKER_ROWS.filter((r) => {
@@ -57,27 +63,21 @@ export default function TrackerClient({ initialRows }: { initialRows: TrackerRow
   const onExport = () =>
     setToast({ open: true, message: `Exporting ${TRACKER_ROWS.length} applications to Excel…`, kind: "info" });
 
+  // Most recent row dictates the "last updated" line — that's the most truthful
+  // signal here without a server-side queue heartbeat.
+  const lastUpdated = TRACKER_ROWS[0]?.appliedAt ?? null;
+
   return (
     <div className="min-h-screen text-ink pb-24">
       <div className="max-w-[1280px] mx-auto px-8">
         <PageHeader
           total={TRACKER_ROWS.length}
-          lastUpdatedMin={2}
+          lastUpdated={lastUpdated}
           onExport={onExport}
         />
 
-        {/* Reviewer-only preview toggle for the empty state */}
-        <div className="flex items-center gap-2 text-[11.5px] text-ink-faint pb-3 -mt-2">
-          <button
-            onClick={() => setEmpty((e) => !e)}
-            className="px-2 h-6 rounded-full border border-dashed border-line hover:border-ink/30 hover:text-ink-soft focus-ring"
-          >
-            Preview: {empty ? "show populated" : "show empty state"}
-          </button>
-        </div>
-
-        {empty ? (
-          <EmptyTracker onStartSearch={() => setEmpty(false)} />
+        {TRACKER_ROWS.length === 0 ? (
+          <EmptyTracker />
         ) : (
           <>
             <FiltersBar
@@ -112,7 +112,12 @@ export default function TrackerClient({ initialRows }: { initialRows: TrackerRow
         }
       />
 
-      <DocDrawer open={!!docPayload} onClose={() => setDocPayload(null)} payload={docPayload} />
+      <DocDrawer
+        open={!!docPayload}
+        onClose={() => setDocPayload(null)}
+        payload={docPayload}
+        masterResumeFile={masterResumeFile}
+      />
 
       <Toast
         open={toast.open}
@@ -124,15 +129,27 @@ export default function TrackerClient({ initialRows }: { initialRows: TrackerRow
   );
 }
 
+function fmtLastUpdated(d: Date | null): string {
+  if (!d) return "never";
+  const diffMs = Date.now() - d.getTime();
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  return `${days}d ago`;
+}
+
 /* ---------------- Page header ---------------- */
 
 function PageHeader({
   total,
-  lastUpdatedMin,
+  lastUpdated,
   onExport,
 }: {
   total: number;
-  lastUpdatedMin: number;
+  lastUpdated: Date | null;
   onExport: () => void;
 }) {
   return (
@@ -141,8 +158,8 @@ function PageHeader({
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight text-ink">Application Tracker</h1>
           <p className="text-[13px] text-ink-soft mt-1">
-            <span className="tabular text-ink">{total}</span> applications · Last updated{" "}
-            <span className="tabular">{lastUpdatedMin}</span> minutes ago
+            <span className="tabular text-ink">{total}</span> application{total === 1 ? "" : "s"} ·
+            Last updated <span className="tabular">{fmtLastUpdated(lastUpdated)}</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -627,7 +644,7 @@ function EmptyResults() {
   );
 }
 
-function EmptyTracker({ onStartSearch }: { onStartSearch: () => void }) {
+function EmptyTracker() {
   return (
     <div className="mt-4 bg-white border border-line rounded-card shadow-subtle">
       <div className="py-20 px-6 flex flex-col items-center text-center">
@@ -640,9 +657,11 @@ function EmptyTracker({ onStartSearch }: { onStartSearch: () => void }) {
           You&apos;ll see every change and every confirmation.
         </p>
         <div className="mt-5">
-          <Button variant="primary" size="md" leading={<Icon name="search" size={14} />} onClick={onStartSearch}>
-            Start a new search
-          </Button>
+          <Link href="/search">
+            <Button variant="primary" size="md" leading={<Icon name="search" size={14} />}>
+              Start a new search
+            </Button>
+          </Link>
         </div>
       </div>
     </div>
@@ -655,25 +674,30 @@ function DocDrawer({
   open,
   onClose,
   payload,
+  masterResumeFile,
 }: {
   open: boolean;
   onClose: () => void;
   payload: DocPayload;
+  masterResumeFile: string;
 }) {
   if (!payload) return null;
   const { kind, row } = payload;
   const titles = {
     jd: `Job description — ${row.company.name}`,
     cl: `Cover letter — ${row.company.name}`,
-    resume: row.resumeFile,
-    diff: `Tailoring diff — ${row.company.name}`,
+    resume: masterResumeFile || "Master resume",
+    diff: `Tailoring summary — ${row.company.name}`,
   };
   const subtitles = {
     jd: row.role,
-    cl: `Generated for ${row.role}`,
-    resume: `Tailored for ${row.role} · ${row.changesCount} changes`,
-    diff: `${row.changesCount} changes · Match ${row.matchScore}`,
+    cl: row.coverLetterText ? `For ${row.role}` : "Not generated yet",
+    resume: row.changesCount > 0 ? `${row.changesCount} tailoring changes` : "Master resume on file",
+    diff: row.changes !== "—" ? row.changes : "No tailoring performed yet",
   };
+
+  const openExternal =
+    kind === "jd" ? row.applyUrl : kind === "resume" ? "/api/profile/resume-pdf" : null;
 
   return (
     <Drawer
@@ -682,21 +706,23 @@ function DocDrawer({
       title={titles[kind]}
       subtitle={subtitles[kind]}
       headerActions={
-        <>
-          <Button variant="ghost" size="sm" leading={<Icon name="external-link" size={13} />}>
-            Open
-          </Button>
-          <Button variant="secondary" size="sm" leading={<Icon name="download" size={13} />}>
-            Download
-          </Button>
-        </>
+        openExternal ? (
+          <a
+            href={openExternal}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-ctrl text-[12.5px] text-ink-soft hover:text-ink hover:bg-[#F1F0EB]/70 focus-ring"
+          >
+            <Icon name="external-link" size={13} /> Open
+          </a>
+        ) : null
       }
       width={580}
     >
       <div className="p-6">
         {kind === "jd" && <JDPreview row={row} />}
         {kind === "cl" && <CoverLetterPreview row={row} />}
-        {kind === "resume" && <ResumePreview row={row} />}
+        {kind === "resume" && <ResumePreview row={row} masterResumeFile={masterResumeFile} />}
         {kind === "diff" && <DiffPreview row={row} />}
       </div>
     </Drawer>
@@ -724,169 +750,131 @@ function JDPreview({ row }: { row: TrackerRow }) {
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-2 text-[12.5px] text-ink-soft">
-        <Icon name="link" size={13} />
-        <a
-          href={row.jd}
-          className="text-accent hover:text-accent-hover hover:underline underline-offset-2 truncate"
-          target="_blank"
-          rel="noreferrer"
-        >
-          {row.jd}
-        </a>
-      </div>
-      <Section title="About the role">
-        <p className="text-[13.5px] leading-[1.65] text-ink/85">
-          We&apos;re hiring a {row.role.toLowerCase()} to work alongside our product and design teams on the core
-          surface our customers use every day. You&apos;ll own end-to-end delivery of features, write clear technical
-          specs, and partner closely with engineering managers to set quality bars for the team.
-        </p>
-      </Section>
-      <Section title="What you'll do">
-        <ul className="space-y-1.5 text-[13.5px] leading-[1.6] text-ink/85 list-disc pl-5">
-          <li>Ship features end-to-end across a TypeScript and React stack.</li>
-          <li>Drive measurable improvements to performance, reliability, and craft.</li>
-          <li>Partner with design on the next generation of the editor surface.</li>
-          <li>Mentor mid-level engineers; write thoughtful code reviews.</li>
-        </ul>
-      </Section>
-      <Section title="What we're looking for">
-        <ul className="space-y-1.5 text-[13.5px] leading-[1.6] text-ink/85 list-disc pl-5">
-          <li>6+ years of professional engineering experience.</li>
-          <li>Deep React and TypeScript fluency; product taste.</li>
-          <li>Track record of shipping consumer-grade or developer-grade tools.</li>
-          <li>Experience with collaborative editing, CRDTs, or document systems is a plus.</li>
-        </ul>
+      {row.applyUrl && (
+        <div className="flex items-center gap-2 text-[12.5px] text-ink-soft">
+          <Icon name="link" size={13} />
+          <a
+            href={row.applyUrl}
+            className="text-accent hover:text-accent-hover hover:underline underline-offset-2 truncate"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {row.applyUrl}
+          </a>
+        </div>
+      )}
+      <Section title="Description">
+        {row.jdTextClean ? (
+          <div className="text-[13.5px] leading-[1.65] text-ink/85 whitespace-pre-wrap max-h-[60vh] overflow-y-auto">
+            {row.jdTextClean}
+          </div>
+        ) : (
+          <p className="text-[13px] text-ink-soft italic">
+            Job description not stored. Open the original posting above.
+          </p>
+        )}
       </Section>
     </div>
   );
 }
 
 function CoverLetterPreview({ row }: { row: TrackerRow }) {
-  return (
-    <div className="space-y-4 text-[13.5px] leading-[1.7] text-ink/90">
-      <div className="text-ink-soft text-[12.5px]">Dear hiring team at {row.company.name},</div>
-      <p>
-        I&apos;m applying for the <strong className="font-medium text-ink">{row.role}</strong> role. I&apos;ve spent
-        the last several years building product surfaces that real people use every day, and the work your team is
-        doing on collaborative editing is the kind of problem I want to keep solving.
-      </p>
-      <p>
-        In my current role I led the rewrite of our editor&apos;s rendering pipeline, taking p95 typing latency from
-        120ms to 28ms and shipping it with no regressions over a 90-day rollout. I care about the small details —
-        keyboard behavior, accessibility, the way a UI feels under load — and I write code reviews that other
-        engineers actually like to read.
-      </p>
-      <p>
-        What draws me to {row.company.name} specifically is the bar you&apos;ve set for craft. I&apos;d love the
-        chance to talk about how I&apos;d contribute on the team.
-      </p>
-      <div className="pt-1">
-        <div>Thanks,</div>
-        <div className="font-medium text-ink">Maya Chen</div>
+  if (!row.coverLetterText) {
+    return (
+      <div className="text-[13px] text-ink-soft italic">
+        This application hasn&apos;t been tailored yet, so no cover letter exists. Once the agent
+        runs tailoring on it, the letter will appear here.
       </div>
+    );
+  }
+  const words = row.coverLetterText.trim().split(/\s+/).filter(Boolean).length;
+  return (
+    <div className="space-y-4">
+      <pre className="text-[13.5px] leading-[1.7] text-ink/90 whitespace-pre-wrap font-sans">
+        {row.coverLetterText}
+      </pre>
       <div className="pt-3 mt-3 border-t border-line text-[12px] text-ink-soft flex items-center justify-between">
-        <span>247 / 250 words</span>
+        <span className="tabular">{words} words</span>
         <span className="flex items-center gap-1.5">
-          <Icon name="sparkle" size={12} /> Tailored from your master letter
+          <Icon name="sparkle" size={12} /> Generated by Claude in your voice
         </span>
       </div>
     </div>
   );
 }
 
-function ResumePreview({ row }: { row: TrackerRow }) {
+function ResumePreview({
+  row,
+  masterResumeFile,
+}: {
+  row: TrackerRow;
+  masterResumeFile: string;
+}) {
   return (
     <div className="space-y-5">
-      <div className="bg-[#FCFBF7] border border-line rounded-card p-5">
-        <div className="text-[15px] font-semibold text-ink">Maya Chen</div>
-        <div className="text-[12.5px] text-ink-soft">
-          San Francisco, CA · maya@chen.dev · linkedin.com/in/mchen
+      <div className="bg-[#FCFBF7] border border-line rounded-card p-5 flex items-center gap-4">
+        <div className="h-12 w-12 rounded-card bg-white border border-line flex items-center justify-center shrink-0">
+          <Icon name="file" size={20} className="text-ink-soft" />
         </div>
-        <div className="mt-4 space-y-3.5">
-          <div>
-            <div className="flex items-baseline justify-between">
-              <div className="text-[13px] font-semibold text-ink">Senior Product Engineer · Brightlane</div>
-              <div className="text-[12px] text-ink-soft tabular">2022 — Present</div>
-            </div>
-            <ul className="mt-1 list-disc pl-5 space-y-1 text-[12.5px] leading-[1.55] text-ink/85">
-              <li>Architected a Kubernetes-orchestrated deploy pipeline; cut deploy time from 22 to 3 minutes.</li>
-              <li>Built React + TypeScript component library used across 6 product teams.</li>
-              <li>Drove direction with design — no PM on the surface.</li>
-            </ul>
+        <div className="min-w-0 flex-1">
+          <div className="text-[14px] font-semibold text-ink truncate">
+            {masterResumeFile || "Master resume"}
           </div>
-          <div>
-            <div className="flex items-baseline justify-between">
-              <div className="text-[13px] font-semibold text-ink">Software Engineer · Loop</div>
-              <div className="text-[12px] text-ink-soft tabular">2019 — 2022</div>
-            </div>
-            <ul className="mt-1 list-disc pl-5 space-y-1 text-[12.5px] leading-[1.55] text-ink/85">
-              <li>Shipped the team&apos;s first design-system primitives; adopted across 12 product surfaces.</li>
-              <li>Reduced support tickets by 38% with a framework-agnostic deploy log streamer.</li>
-            </ul>
+          <div className="text-[12.5px] text-ink-soft mt-0.5">
+            {row.changesCount > 0
+              ? `${row.changesCount} tailoring changes for ${row.role}`
+              : `Submitted as-is for ${row.role}`}
           </div>
         </div>
+        <a
+          href="/api/profile/resume-pdf"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-ctrl bg-white border border-line text-[12.5px] text-ink hover:border-ink/30 focus-ring shrink-0"
+        >
+          <Icon name="download" size={13} /> Download
+        </a>
       </div>
-      <div className="text-[12.5px] text-ink-soft flex items-center gap-2">
-        <Icon name="git-pull-request" size={13} />
-        {row.changesCount} changes from master ·{" "}
-        <button className="text-accent hover:text-accent-hover hover:underline underline-offset-2">View diff</button>
-      </div>
+      {row.changes !== "—" && (
+        <Section title="Tailoring rationale">
+          <p className="text-[13px] leading-[1.65] text-ink/85">{row.changes}</p>
+        </Section>
+      )}
     </div>
   );
 }
 
 function DiffPreview({ row }: { row: TrackerRow }) {
-  const changes = [
-    {
-      reason: "JD emphasizes payment systems scale; called out volume.",
-      before: "Owned the checkout rewrite; partnered with design.",
-      after:
-        "Owned the rewrite of a checkout flow processing $2.4B/yr; led 4-engineer team and partnered closely with design.",
-    },
-    {
-      reason: "Surface React performance work — repeated in JD.",
-      before: "Improved editor performance.",
-      after: "Cut p95 typing latency from 120ms to 28ms in a production React editor used by 400k DAU.",
-    },
-    {
-      reason: "Promote payments-adjacent infra work; align language to JD.",
-      before: "Built a logs streamer.",
-      after:
-        "Built a framework-agnostic deploy log streamer adopted across 12 surfaces; cut support load by 38%.",
-    },
-  ];
+  const hasTailoring = row.changes !== "—" || row.coverLetterText;
+  if (!hasTailoring) {
+    return (
+      <div className="text-[13px] text-ink-soft italic">
+        This application hasn&apos;t been tailored yet — no diff to show.
+      </div>
+    );
+  }
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <div className="text-[13px] text-ink-soft">{row.changesCount} changes, all explained.</div>
-        <div className="flex items-center gap-1.5 text-[12px] text-ink-soft">
-          <span className="inline-flex items-center gap-1">
-            <span className="w-2.5 h-px bg-accent" />
-            added
-          </span>
-          <span className="inline-flex items-center gap-1 ml-2">
-            <span className="w-2.5 h-px bg-ink-faint" />
-            removed
-          </span>
+        <div className="text-[13px] text-ink-soft">
+          Match score{" "}
+          <span className="text-ink tabular">{row.matchScore}</span> · Status{" "}
+          <span className="text-ink">{row.status}</span>
         </div>
       </div>
-      {changes.map((c, i) => (
-        <div key={i} className="border border-line rounded-card overflow-hidden">
-          <div className="px-3 py-2 bg-[#FCFBF7] border-b border-line text-[12px] text-ink-soft flex items-center gap-1.5">
-            <Icon name="info" size={12} />
-            {c.reason}
-          </div>
-          <div className="p-3 space-y-2 text-[13px] leading-[1.55]">
-            <div className="text-ink-faint">
-              <span className="line-through decoration-ink-faint/60">{c.before}</span>
-            </div>
-            <div className="text-ink">
-              <span className="border-b border-accent">{c.after}</span>
-            </div>
-          </div>
-        </div>
-      ))}
+      {row.changes !== "—" && (
+        <Section title="What Claude changed">
+          <p className="text-[13.5px] leading-[1.65] text-ink/90">{row.changes}</p>
+        </Section>
+      )}
+      {row.coverLetterText && (
+        <Section title="Cover letter preview">
+          <pre className="text-[13px] leading-[1.6] text-ink/85 whitespace-pre-wrap font-sans max-h-[280px] overflow-y-auto bg-[#FCFBF7] border border-line rounded-card p-4">
+            {row.coverLetterText.slice(0, 800)}
+            {row.coverLetterText.length > 800 ? "…" : ""}
+          </pre>
+        </Section>
+      )}
     </div>
   );
 }

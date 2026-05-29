@@ -6,7 +6,6 @@ import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, SectionLabel } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
-import { MatchScore } from "@/components/ui/match-score";
 import { Monogram } from "@/components/ui/monogram";
 import { Textarea } from "@/components/ui/input";
 import type { ScreenerAnswer } from "@/lib/prompts/screener-answers";
@@ -208,7 +207,6 @@ function ReviewHeader({
             </div>
           )}
         </div>
-        <MatchScore score={90} size={56} stroke={5} />
       </div>
     </div>
   );
