@@ -61,7 +61,6 @@ const ONBOARDING_STEPS = [
   { id: 4, label: "Experience" },
   { id: 5, label: "Preferences" },
   { id: 6, label: "Voice sample" },
-  { id: 7, label: "Connect Gmail" },
 ];
 
 export type AboutForm = {
@@ -196,7 +195,6 @@ function OnboardingInner() {
       return true;
     }
     if (step === 6) return voice.trim().split(/\s+/).filter(Boolean).length >= 30;
-    if (step === 7) return gmailConnected;
     return true;
   })();
 
@@ -251,7 +249,6 @@ function OnboardingInner() {
           {step === 4 && <OnbExperience />}
           {step === 5 && <OnbPreferences prefs={prefs} setPrefs={setPrefs} />}
           {step === 6 && <OnbVoice value={voice} onChange={setVoice} />}
-          {step === 7 && <OnbGmail connected={gmailConnected} error={gmailError} />}
         </div>
 
         <div className="mt-12 flex items-center justify-between">
@@ -273,9 +270,7 @@ function OnboardingInner() {
                   ? "Upload your resume to continue"
                   : step === 6
                     ? "Write at least 30 words to continue"
-                    : step === 7
-                      ? "Connect Gmail to continue"
-                      : "Fill in the required fields to continue"}
+                    : "Fill in the required fields to continue"}
               </span>
             )}
             <Button
