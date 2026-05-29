@@ -201,11 +201,13 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
               className="w-full mt-6"
               onClick={() => {
                 // Persist current settings back to profile so the next visit
-                // reflects what the user just chose. Fire-and-forget so we
-                // don't block navigation on the round trip.
+                // reflects what the user just chose. keepalive: true is
+                // load-bearing — without it the browser kills this request
+                // as soon as router.push() navigates away below.
                 void fetch("/api/profile/search-prefs", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
+                  keepalive: true,
                   body: JSON.stringify({
                     targetRoleTitles: keywords,
                     preferredLocations: locations,

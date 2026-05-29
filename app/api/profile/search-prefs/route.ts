@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db/client";
@@ -41,5 +42,12 @@ export async function POST(req: Request) {
   }
 
   await db.update(profile).set(patch).where(eq(profile.userId, user.id));
+
+  // Bust the router cache for any page that reads these fields, so the next
+  // navigation rehydrates from the DB instead of serving a stale RSC payload.
+  revalidatePath("/search");
+  revalidatePath("/dashboard");
+
+  console.log("[search-prefs] updated", { userId: user.id, keys: Object.keys(patch) });
   return NextResponse.json({ ok: true, updated: Object.keys(patch).length });
 }
