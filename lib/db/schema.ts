@@ -130,6 +130,22 @@ export const profile = pgTable("profile", {
   resumePdf: bytea("resume_pdf"),
   resumeFileName: text("resume_file_name"),
 
+  // Personal answers reused across applications so the submission agent
+  // doesn't have to guess. Most are EEO/demographic survey defaults — we
+  // default to 'decline' so an unconfigured user still passes required-
+  // field checks without leaking attributes.
+  preferredName: text("preferred_name"),
+  countryOfResidence: text("country_of_residence"),
+  countryOfWork: text("country_of_work"),
+  employmentRestrictions: boolean("employment_restrictions").notNull().default(false),
+  previouslyWorkedHere: boolean("previously_worked_here").notNull().default(false),
+  accommodationsNeeded: text("accommodations_needed"),
+  eeoGender: text("eeo_gender").notNull().default("decline"),
+  eeoHispanicLatino: text("eeo_hispanic_latino").notNull().default("decline"),
+  eeoRaceEthnicity: text("eeo_race_ethnicity").notNull().default("decline"),
+  eeoVeteranStatus: text("eeo_veteran_status").notNull().default("decline"),
+  eeoDisabilityStatus: text("eeo_disability_status").notNull().default("decline"),
+
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
