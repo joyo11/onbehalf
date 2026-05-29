@@ -226,10 +226,6 @@ export default function GoClient({ summary }: { summary: GoSummary }) {
         </div>
       </Card>
 
-      <div className="mt-6 text-center text-[12px] text-mute">
-        Demo mode is on by default — the agent fills each form and stops before clicking Submit.
-        Flip <code className="text-ink">REAL_SUBMIT_ENABLED=true</code> to actually submit.
-      </div>
     </div>
   );
 }

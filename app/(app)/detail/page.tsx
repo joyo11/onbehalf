@@ -167,18 +167,6 @@ function DetailInner() {
                 Live view URL will appear when the Browserbase session starts.
               </p>
             )}
-            <div className="mt-6 pt-4 border-t border-line text-[12.5px] text-mute lh-body flex items-start gap-1.5">
-              <Icon name="shield" size={13} className="mt-0.5 shrink-0" />
-              <span>
-                Demo mode: the agent fills the form, screenshots it, and stops. It does NOT click
-                Submit until you flip <code className="text-ink">REAL_SUBMIT_ENABLED=true</code>.
-              </span>
-            </div>
-          </Card>
-
-          <SectionLabel className="mb-3 mt-7">Tailoring summary</SectionLabel>
-          <Card className="p-5 text-[13.5px] lh-body text-ink/85">
-            {data.application.tailoringSummary || "—"}
           </Card>
         </div>
       </div>
