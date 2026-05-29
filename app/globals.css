@@ -23,7 +23,8 @@
   --color-ok: #15803D;
 
   /* Fonts (wired in layout.tsx via next/font) */
-  --font-sans: var(--font-inter), "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), "Quicksand", ui-sans-serif, system-ui, sans-serif;
+  --font-accent: var(--font-accent), "Caveat", "Comic Sans MS", cursive;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
   /* Radii */
@@ -58,12 +59,18 @@ body {
 body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
-  font-feature-settings: "cv11", "ss01", "ss03";
+  /* Quicksand doesn't ship the OpenType features Inter does — keep this empty */
+  font-feature-settings: normal;
 }
 
 h1, h2, h3, h4 {
-  letter-spacing: -0.018em;
+  letter-spacing: -0.005em; /* Quicksand needs much less negative tracking than Inter */
   line-height: 1.1;
+  font-weight: 700;
+}
+
+.font-accent {
+  font-family: var(--font-accent);
 }
 
 .lh-body { line-height: 1.6; }

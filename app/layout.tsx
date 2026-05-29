@@ -1,10 +1,18 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Caveat, JetBrains_Mono, Quicksand } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+// Primary UI font — rounded chunky display sans, similar to elaichi co.
+const quicksand = Quicksand({
+  variable: "--font-inter", // keep the CSS var name; Tailwind's --font-sans already references it
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
+// Marker / handwritten accent — for signatures, "from us" notes, etc.
+const caveat = Caveat({
+  variable: "--font-accent",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
@@ -34,12 +42,12 @@ export default function RootLayout({
           colorBackground: "#FAFAF7",
           colorText: "#1A1A1A",
           colorTextSecondary: "#6B6B6B",
-          fontFamily: "Inter, system-ui, sans-serif",
-          borderRadius: "6px",
+          fontFamily: "Quicksand, system-ui, sans-serif",
+          borderRadius: "8px",
         },
       }}
     >
-      <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+      <html lang="en" className={`${quicksand.variable} ${caveat.variable} ${jetbrainsMono.variable}`}>
         <body className="bg-sand text-ink antialiased min-h-screen">{children}</body>
       </html>
     </ClerkProvider>
