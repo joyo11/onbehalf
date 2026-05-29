@@ -84,8 +84,14 @@ export async function runSubmission(applicationId: string): Promise<SubmissionRe
     workAuthorization: row.profileRow.workAuthorization,
     skillYears: (row.profileRow.skillYears as Record<string, number | null>) ?? {},
     voiceSample: row.profileRow.voiceSample,
-    resumePdfBytes: null, // TODO: pull from R2 once we wire resume PDF storage
-    resumeFileName: `${(row.profileRow.fullName ?? "resume").replace(/\s+/g, "_")}_resume.pdf`,
+    resumePdfBytes: row.profileRow.resumePdf
+      ? Buffer.isBuffer(row.profileRow.resumePdf)
+        ? row.profileRow.resumePdf
+        : Buffer.from(row.profileRow.resumePdf)
+      : null,
+    resumeFileName:
+      row.profileRow.resumeFileName ??
+      `${(row.profileRow.fullName ?? "resume").replace(/\s+/g, "_")}_resume.pdf`,
     coverLetter: row.app.coverLetterText ?? "",
     screeners,
   };

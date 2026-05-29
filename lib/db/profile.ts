@@ -41,7 +41,11 @@ export async function getOrCreateProfile(user: User) {
  * Persist a parsed resume: update profile contact fields (without clobbering
  * anything the user already typed) and replace all resume_section rows.
  */
-export async function saveParsedResume(user: User, parsed: ParsedResume) {
+export async function saveParsedResume(
+  user: User,
+  parsed: ParsedResume,
+  pdf?: { pdfBytes: Buffer; fileName: string },
+) {
   const existing = await getOrCreateProfile(user);
   const c = parsed.contact;
 
@@ -70,6 +74,8 @@ export async function saveParsedResume(user: User, parsed: ParsedResume) {
           ? Object.fromEntries(parsed.skills.map((s) => [s.skill, s.years ?? null]))
           : existing.skillYears,
       resumeEmbedding: resumeEmbedding ?? existing.resumeEmbedding,
+      resumePdf: pdf?.pdfBytes ?? existing.resumePdf,
+      resumeFileName: pdf?.fileName ?? existing.resumeFileName,
       updatedAt: new Date(),
     })
     .where(eq(profile.id, existing.id));

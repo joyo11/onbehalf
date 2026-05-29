@@ -14,6 +14,12 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
+
 /* ---------------- Custom types ---------------- */
 
 // pgvector — embeddings produced by text-embedding-3-small (1536 dims)
@@ -121,6 +127,8 @@ export const profile = pgTable("profile", {
   voiceSample: text("voice_sample"),
   tailoringEnabled: boolean("tailoring_enabled").notNull().default(true),
   resumeEmbedding: vector("resume_embedding"),
+  resumePdf: bytea("resume_pdf"),
+  resumeFileName: text("resume_file_name"),
 
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

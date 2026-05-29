@@ -1,32 +1,123 @@
-"use client";
-
-/*  Dashboard — 3 stat cards, live queue, Gmail rail. */
-
-import { useRouter } from "next/navigation";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Icon, type IconName } from "@/components/ui/icon";
-import { MatchScore } from "@/components/ui/match-score";
 import { Monogram } from "@/components/ui/monogram";
 import { StatusPill } from "@/components/ui/status-pill";
-import { GMAIL, QUEUE } from "@/lib/data";
-import type { QueueItem } from "@/lib/types";
+import { getCurrentUser } from "@/lib/auth";
+import { db } from "@/lib/db/client";
+import { application, job, user as userTable } from "@/lib/db/schema";
+import type { Status } from "@/lib/types";
 
-export default function DashboardScreen() {
-  const router = useRouter();
+export default async function DashboardScreen() {
+  const user = await getCurrentUser();
+  if (!user) {
+    return (
+      <div className="px-10 py-9">
+        <Card className="p-8 text-center">
+          <p>Please sign in.</p>
+        </Card>
+      </div>
+    );
+  }
+
+  const weekAgo = new Date(Date.now() - 7 * 86400_000);
+
+  const [statsRow, recent, gmailRow] = await Promise.all([
+    // Aggregate counts
+    db
+      .select({
+        sentThisWeek: sql<number>`count(*) filter (where ${application.submittedAt} >= ${weekAgo})::int`,
+        sentAllTime: sql<number>`count(*) filter (where ${application.submittedAt} is not null)::int`,
+        confirmed: sql<number>`count(*) filter (where ${application.status} = 'confirmed')::int`,
+        pending: sql<number>`count(*) filter (where ${application.status} = 'pending')::int`,
+        needsHuman: sql<number>`count(*) filter (where ${application.status} = 'needsHuman')::int`,
+        failed: sql<number>`count(*) filter (where ${application.status} = 'failed')::int`,
+      })
+      .from(application)
+      .where(eq(application.userId, user.id))
+      .then((rs) => rs[0]),
+    // Last 5 applications joined with job
+    db
+      .select({
+        appId: application.id,
+        status: application.status,
+        matchScore: application.matchScore,
+        submittedAt: application.submittedAt,
+        company: job.company,
+        title: job.title,
+      })
+      .from(application)
+      .innerJoin(job, eq(application.jobId, job.id))
+      .where(eq(application.userId, user.id))
+      .orderBy(desc(application.submittedAt))
+      .limit(5),
+    // Gmail connection status
+    db.select().from(userTable).where(eq(userTable.id, user.id)).limit(1).then((rs) => rs[0]),
+  ]);
+
+  const stats = statsRow ?? {
+    sentThisWeek: 0,
+    sentAllTime: 0,
+    confirmed: 0,
+    pending: 0,
+    needsHuman: 0,
+    failed: 0,
+  };
+
+  const confirmationRate =
+    stats.sentAllTime > 0 ? Math.round((stats.confirmed / stats.sentAllTime) * 100) : 0;
+
+  // Active alerts that deserve attention
+  const alerts = [
+    stats.pending > 0
+      ? { id: "pending", icon: "alert-circle" as IconName, label: `${stats.pending} need your review`, href: "/tracker?status=pending" }
+      : null,
+    stats.needsHuman > 0
+      ? {
+          id: "needs_human",
+          icon: "shield" as IconName,
+          label: `${stats.needsHuman} need human input (CAPTCHA / unknown form)`,
+          href: "/tracker?status=needsHuman",
+        }
+      : null,
+    stats.failed > 0
+      ? {
+          id: "failed",
+          icon: "x" as IconName,
+          label: `${stats.failed} failed — check the tracker`,
+          href: "/tracker?status=failed",
+        }
+      : null,
+    !gmailRow?.gmailConnectedAt
+      ? {
+          id: "gmail",
+          icon: "mail" as IconName,
+          label: "Connect Gmail to track confirmation emails",
+          href: "/onboarding",
+        }
+      : null,
+  ].filter(Boolean) as Array<{ id: string; icon: IconName; label: string; href: string }>;
+
   return (
     <div className="px-10 py-9 max-w-[1440px] mx-auto">
-      <DashHeader onNewSearch={() => router.push("/search")} />
+      <DashHeader email={user.email} />
+
       <div className="mt-8 grid grid-cols-12 gap-6">
         <div className="col-span-9 space-y-6">
-          <DashStats />
-          <DashQueue
-            onOpenReview={() => router.push("/review")}
-            onOpenDetail={() => router.push("/detail")}
+          <DashStats
+            sentThisWeek={stats.sentThisWeek}
+            confirmed={stats.confirmed}
+            sentAllTime={stats.sentAllTime}
+            confirmationRate={confirmationRate}
+            needsHuman={stats.needsHuman}
           />
+          <DashRecent rows={recent} />
         </div>
         <div className="col-span-3 space-y-6">
-          <DashGmail />
+          <DashAlerts alerts={alerts} />
+          <DashGmail connected={!!gmailRow?.gmailConnectedAt} />
           <DashNext />
         </div>
       </div>
@@ -34,236 +125,268 @@ export default function DashboardScreen() {
   );
 }
 
-function DashHeader({ onNewSearch }: { onNewSearch: () => void }) {
+function DashHeader({ email }: { email: string }) {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   return (
     <div className="flex items-start justify-between">
       <div>
-        <div className="text-[12.5px] text-mute flex items-center gap-1.5">
-          <span
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ background: "var(--accent)", animation: "pulse 1.6s ease-in-out infinite" }}
-          />
-          Onbehalf is running
-        </div>
-        <h1 className="mt-1.5 text-[30px] font-semibold tracking-[-0.022em]">
-          I applied to 12 jobs for you today.
+        <h1 className="text-[30px] font-semibold tracking-[-0.022em]">
+          {greeting}, {email.split("@")[0]}.
         </h1>
-        <div className="mt-2 text-[14px] text-mute lh-body">
-          7 confirmed, 3 awaiting confirmation, 2 need your review. Estimated cost so far:{" "}
-          <span className="text-ink font-medium">$3.40 of $29</span>.
-        </div>
+        <p className="mt-2 text-[14px] text-mute lh-body">
+          Here&apos;s what your agent has been up to.
+        </p>
       </div>
-      <div className="flex items-center gap-2.5">
-        <Button variant="secondary" leading={<Icon name="gauge" size={14} />}>
-          Pause queue
-        </Button>
-        <Button variant="primary" onClick={onNewSearch} leading={<Icon name="plus" size={14} />}>
+      <Link href="/search">
+        <Button variant="primary" size="lg" leading={<Icon name="search" size={14} />}>
           New search
         </Button>
-      </div>
+      </Link>
     </div>
   );
 }
 
-type Stat = {
-  label: string;
-  value: number;
-  delta: string;
-  accent: boolean;
-  sub: string;
-};
-
-function DashStats() {
-  const stats: Stat[] = [
-    { label: "Applied today", value: 12, delta: "+3 last hour", accent: true, sub: "Across 4 ATS providers" },
-    { label: "Confirmed", value: 7, delta: "58% confirm rate", accent: false, sub: "Last 30 days" },
-    { label: "Pending your review", value: 2, delta: "Oldest: 14 min", accent: false, sub: "1 high-confidence, 1 borderline" },
-  ];
-  const icons: IconName[] = ["paper-plane", "check-circle", "clock"];
-  const widths = [80, 58, 30];
-  return (
-    <div className="grid grid-cols-3 gap-4">
-      {stats.map((s, i) => (
-        <Card key={s.label} className="p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-[12px] uppercase tracking-[0.06em] font-semibold text-mute">{s.label}</span>
-            <Icon name={icons[i]} size={14} className="text-mute" />
-          </div>
-          <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-[40px] font-semibold tracking-[-0.025em] tabular-nums">{s.value}</span>
-            <span
-              className="text-[12.5px] font-medium"
-              style={{ color: s.accent ? "var(--accent-hi)" : "#6B6B6B" }}
-            >
-              {s.delta}
-            </span>
-          </div>
-          <div className="mt-1 text-[12.5px] text-mute">{s.sub}</div>
-          <div className="mt-3 h-1 w-full rounded-full bg-[#F2F1EC] overflow-hidden">
-            <div
-              className="h-full rounded-full"
-              style={{ width: `${widths[i]}%`, background: s.accent ? "var(--accent)" : "#D6D3CC" }}
-            />
-          </div>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function DashQueue({
-  onOpenReview,
-  onOpenDetail,
+function DashStats({
+  sentThisWeek,
+  confirmed,
+  sentAllTime,
+  confirmationRate,
+  needsHuman,
 }: {
-  onOpenReview: () => void;
-  onOpenDetail: () => void;
+  sentThisWeek: number;
+  confirmed: number;
+  sentAllTime: number;
+  confirmationRate: number;
+  needsHuman: number;
 }) {
   return (
-    <Card className="overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-line">
-        <div className="flex items-center gap-3">
-          <h3 className="text-[15px] font-semibold">Application queue</h3>
-          <span className="text-[12px] text-mute">· Today, May 27</span>
+    <div className="grid grid-cols-3 gap-4">
+      <Stat
+        label="Sent this week"
+        value={sentThisWeek.toString()}
+        sub={`${sentAllTime} all-time`}
+        icon="paper-plane"
+      />
+      <Stat
+        label="Confirmed"
+        value={confirmed.toString()}
+        sub={`${confirmationRate}% confirmation rate`}
+        icon="check-circle"
+        accent
+      />
+      <Stat
+        label="Awaiting human"
+        value={needsHuman.toString()}
+        sub={needsHuman === 0 ? "Nothing blocking" : "Open the tracker"}
+        icon="shield"
+      />
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  sub,
+  icon,
+  accent,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  icon: IconName;
+  accent?: boolean;
+}) {
+  return (
+    <Card className="p-5">
+      <div className="flex items-start justify-between">
+        <div className="text-[12px] uppercase tracking-[0.06em] font-semibold text-mute">
+          {label}
         </div>
-        <div className="flex items-center gap-2">
-          <FilterChip label="All" active />
-          <FilterChip label="Needs review" count={2} />
-          <FilterChip label="Live" count={3} />
-          <FilterChip label="Done" count={5} />
-        </div>
+        <Icon
+          name={icon}
+          size={15}
+          className={accent ? "" : "text-mute"}
+          style={accent ? { color: "var(--accent)" } : undefined}
+        />
       </div>
-
-      <div className="grid grid-cols-[36px_1fr_220px_140px_88px] px-5 py-2.5 text-[11px] uppercase tracking-[0.06em] font-semibold text-mute border-b border-line bg-[#FBFAF7]">
-        <div></div>
-        <div>Role</div>
-        <div>Status</div>
-        <div>Activity</div>
-        <div className="text-right">Match</div>
-      </div>
-
-      <div className="divide-y divide-line">
-        {QUEUE.map((q) => (
-          <QueueRow key={q.id} q={q} onOpenReview={onOpenReview} onOpenDetail={onOpenDetail} />
-        ))}
-      </div>
-
-      <div className="px-5 py-3 border-t border-line bg-[#FBFAF7] flex items-center justify-between text-[12.5px] text-mute">
-        <span>
-          Showing 12 of 47 today. <a href="#" className="font-medium text-ink hover:underline">View all</a>
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Icon name="bolt" size={13} style={{ color: "var(--accent)" }} />
-          Next batch in <span className="text-ink font-medium">47 min</span>
-        </span>
-      </div>
+      <div className="mt-2 text-[32px] font-semibold tabular tracking-[-0.018em]">{value}</div>
+      <div className="text-[12.5px] text-mute mt-1">{sub}</div>
     </Card>
   );
 }
 
-function FilterChip({ label, count, active }: { label: string; count?: number; active?: boolean }) {
-  return (
-    <button
-      className={`h-7 px-2.5 text-[12px] font-medium rounded-sm transition-colors flex items-center gap-1.5 ${
-        active ? "bg-ink text-white" : "text-mute hover:text-ink border border-line bg-white"
-      }`}
-    >
-      {label}
-      {count !== undefined && (
-        <span className={`tabular-nums ${active ? "text-white/70" : "text-mute"}`}>{count}</span>
-      )}
-    </button>
-  );
-}
-
-function QueueRow({
-  q,
-  onOpenReview,
-  onOpenDetail,
+function DashRecent({
+  rows,
 }: {
-  q: QueueItem;
-  onOpenReview: () => void;
-  onOpenDetail: () => void;
+  rows: Array<{
+    appId: string;
+    status: Status;
+    matchScore: number;
+    submittedAt: Date | null;
+    company: string;
+    title: string;
+  }>;
 }) {
-  const clickable = q.status === "pending" || q.status === "confirmed" || q.status === "submitted";
-  const handle = () => {
-    if (q.status === "pending") onOpenReview();
-    else if (clickable) onOpenDetail();
-  };
-  return (
-    <button
-      onClick={handle}
-      className="w-full grid grid-cols-[36px_1fr_220px_140px_88px] items-center px-5 py-3.5 text-left hover:bg-[#FBFAF7] transition-colors"
-    >
-      <Monogram name={q.company} size={32} />
-      <div className="min-w-0 pr-4">
-        <div className="text-[14px] font-medium truncate">{q.role}</div>
-        <div className="text-[12px] text-mute mt-0.5">
-          {q.company} <span className="text-[#D6D3CC]">·</span> via {q.via}{" "}
-          <span className="text-[#D6D3CC]">·</span> {q.time}
-        </div>
-      </div>
-      <div className="flex items-center gap-2 min-w-0">
-        <StatusPill status={q.status} />
-      </div>
-      <div className="text-[12.5px] text-mute truncate pr-3">{q.note}</div>
-      <div className="flex items-center justify-end gap-2">
-        <MatchScore score={q.score} size={32} stroke={3} />
-      </div>
-    </button>
-  );
-}
-
-function DashGmail() {
   return (
     <Card className="overflow-hidden">
-      <div className="px-4 py-3 border-b border-line flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Icon name="mail" size={14} style={{ color: "var(--accent-hi)" }} />
-          <h3 className="text-[13.5px] font-semibold">Inbox · today</h3>
+      <div className="px-5 py-4 border-b border-line flex items-center justify-between">
+        <div className="text-[14px] font-semibold">Recent applications</div>
+        <Link href="/tracker" className="text-[12.5px] text-mute hover:text-ink">
+          See all →
+        </Link>
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-5 py-12 text-center">
+          <Icon name="inbox" size={20} className="text-mute mx-auto" />
+          <p className="text-[13.5px] text-mute mt-3">
+            No applications yet. Start a new search to apply.
+          </p>
         </div>
-        <button className="text-[11.5px] text-mute hover:text-ink">View all</button>
+      ) : (
+        <ul className="divide-y divide-line">
+          {rows.map((r) => (
+            <li key={r.appId}>
+              <Link
+                href={`/detail?id=${encodeURIComponent(r.appId)}`}
+                className="flex items-center gap-3 px-5 py-3.5 hover:bg-[#F1F0EB]/40"
+              >
+                <Monogram name={r.company} size={36} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13.5px] font-medium truncate">{r.title}</div>
+                  <div className="text-[12px] text-mute truncate">
+                    {r.company}
+                    {r.submittedAt
+                      ? ` · ${r.submittedAt.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
+                      : ""}
+                  </div>
+                </div>
+                <StatusPill status={r.status} />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function DashAlerts({
+  alerts,
+}: {
+  alerts: Array<{ id: string; icon: IconName; label: string; href: string }>;
+}) {
+  if (alerts.length === 0) {
+    return (
+      <Card className="p-5">
+        <div className="text-[12px] uppercase tracking-[0.06em] font-semibold text-mute">Alerts</div>
+        <div className="mt-3 flex items-center gap-2 text-[13px] text-mute">
+          <Icon name="check" size={13} style={{ color: "var(--accent)" }} />
+          You&apos;re all caught up.
+        </div>
+      </Card>
+    );
+  }
+  return (
+    <Card className="p-5">
+      <div className="text-[12px] uppercase tracking-[0.06em] font-semibold text-mute mb-3">
+        Alerts
       </div>
-      <div className="divide-y divide-line">
-        {GMAIL.map((g, i) => (
-          <div key={i} className="p-4 hover:bg-[#FBFAF7] transition-colors">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-[12.5px] font-semibold truncate">{g.sender}</div>
-              <div className="text-[11px] text-mute shrink-0">{g.time}</div>
-            </div>
-            <div className="text-[12.5px] mt-0.5 truncate">{g.subject}</div>
-            <div className="text-[11.5px] text-mute mt-1 lh-body line-clamp-2">{g.preview}</div>
-          </div>
+      <ul className="space-y-2.5">
+        {alerts.map((a) => (
+          <li key={a.id}>
+            <Link
+              href={a.href}
+              className="flex items-start gap-2 text-[13px] text-ink/85 hover:text-ink"
+            >
+              <Icon name={a.icon} size={13} className="mt-0.5 shrink-0 text-warning" />
+              <span>{a.label}</span>
+            </Link>
+          </li>
         ))}
+      </ul>
+    </Card>
+  );
+}
+
+function DashGmail({ connected }: { connected: boolean }) {
+  return (
+    <Card className="p-5">
+      <div className="flex items-start justify-between">
+        <div className="text-[12px] uppercase tracking-[0.06em] font-semibold text-mute">Gmail</div>
+        <Icon name="mail" size={14} className="text-mute" />
       </div>
+      {connected ? (
+        <div className="mt-3">
+          <div
+            className="flex items-center gap-1.5 text-[13px] font-medium"
+            style={{ color: "var(--accent-hi)" }}
+          >
+            <Icon name="check-circle" size={13} /> Connected
+          </div>
+          <p className="text-[12px] text-mute mt-1.5 lh-body">
+            We&apos;ll check your inbox daily and mark applications as Confirmed.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-3">
+          <p className="text-[12.5px] text-mute lh-body">
+            Connect Gmail to detect confirmation emails automatically.
+          </p>
+          <Link
+            href="/api/auth/google/start"
+            className="mt-3 inline-flex items-center gap-1.5 text-[12.5px] font-medium"
+            style={{ color: "var(--accent-hi)" }}
+          >
+            Connect now <Icon name="arrow-right" size={12} />
+          </Link>
+        </div>
+      )}
     </Card>
   );
 }
 
 function DashNext() {
-  const items = [
-    { t: "2 applications need your review", d: "Anthropic + Figma — borderline screener confidence." },
-    { t: "New batch of 8 matches found", d: "Posted in the last 24h. Estimated $1.20 to apply." },
-    { t: "Weekly summary ready", d: "47 applied, 19 confirmed, 3 recruiter replies." },
-  ];
   return (
     <Card className="p-5">
-      <div className="flex items-center gap-2">
-        <Icon name="sparkles" size={14} style={{ color: "var(--accent-hi)" }} />
-        <h3 className="text-[13.5px] font-semibold">Next up</h3>
+      <div className="text-[12px] uppercase tracking-[0.06em] font-semibold text-mute mb-3">
+        Try next
       </div>
-      <ul className="mt-4 space-y-3.5">
-        {items.map((p, i) => (
-          <li key={i} className="flex items-start gap-2.5">
-            <span
-              className="mt-1 w-1.5 h-1.5 rounded-full shrink-0"
-              style={{ background: i === 0 ? "var(--accent)" : "#D6D3CC" }}
+      <ul className="space-y-2.5 text-[13px] text-ink/85">
+        <li>
+          <Link href="/search" className="flex items-start gap-2 hover:text-ink">
+            <Icon
+              name="search"
+              size={13}
+              className="mt-0.5 shrink-0"
+              style={{ color: "var(--accent)" }}
             />
-            <div>
-              <div className="text-[13px] font-medium">{p.t}</div>
-              <div className="text-[12px] text-mute mt-0.5 lh-body">{p.d}</div>
-            </div>
-          </li>
-        ))}
+            Run a new search
+          </Link>
+        </li>
+        <li>
+          <Link href="/tracker" className="flex items-start gap-2 hover:text-ink">
+            <Icon
+              name="table-2"
+              size={13}
+              className="mt-0.5 shrink-0"
+              style={{ color: "var(--accent)" }}
+            />
+            Open the tracker
+          </Link>
+        </li>
+        <li>
+          <Link href="/settings" className="flex items-start gap-2 hover:text-ink">
+            <Icon
+              name="user"
+              size={13}
+              className="mt-0.5 shrink-0"
+              style={{ color: "var(--accent)" }}
+            />
+            Update your profile
+          </Link>
+        </li>
       </ul>
     </Card>
   );

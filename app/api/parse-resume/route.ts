@@ -97,9 +97,12 @@ export async function POST(req: Request) {
       );
     }
 
-    // Persist: update profile contact + replace resume_section rows.
+    // Persist: update profile contact + replace resume_section rows + store PDF bytes.
     try {
-      await saveParsedResume(user, parsed);
+      await saveParsedResume(user, parsed, {
+        pdfBytes: bytes,
+        fileName: file.name || "resume.pdf",
+      });
     } catch (e) {
       // Don't fail the parse if the DB save errors — return parsed result
       // so the UI still updates, and log so we can investigate.
