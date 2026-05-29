@@ -1,11 +1,19 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-// Public routes: landing + auth pages + the API parse route (we'll lock that down later).
+// Public routes: landing + auth pages + internal API routes that have their
+// own Bearer-token auth. The server-to-server fetches from after() in
+// /api/applications and /api/batch-submit carry no Clerk cookie — without
+// this allowlist, clerkMiddleware's auth.protect() returns 404 before
+// process-queue's own auth check ever runs, which is why the queue has
+// never actually advanced in any test run.
 const isPublic = createRouteMatcher([
   "/",
   "/about",
   "/sign-in(.*)",
   "/sign-up(.*)",
+  "/api/process-queue",
+  "/api/scrape-jobs",
+  "/api/check-gmail",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
