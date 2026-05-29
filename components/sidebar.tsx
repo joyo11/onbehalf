@@ -20,22 +20,13 @@ type NavSection = {
 
 const NAV: NavSection[] = [
   {
-    label: "Marketing",
-    items: [{ href: "/", name: "Home", icon: "globe" }],
-  },
-  {
-    label: "Onboarding",
-    items: [{ href: "/onboarding", name: "Sign-up flow", icon: "sparkles" }],
-  },
-  {
     label: "Product",
     items: [
       { href: "/dashboard", name: "Dashboard", icon: "layout-dashboard" },
       { href: "/search", name: "New search", icon: "search" },
       { href: "/matches", name: "Job matches", icon: "list" },
-      { href: "/review", name: "Review & approve", icon: "sparkles", badge: 2 },
+      { href: "/review", name: "Review & approve", icon: "sparkles" },
       { href: "/tracker", name: "Tracker", icon: "table-2" },
-      { href: "/detail", name: "Application", icon: "check-circle" },
     ],
   },
   {

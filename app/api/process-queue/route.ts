@@ -21,7 +21,13 @@ function authorized(req: Request): boolean {
 type Body = { userId?: string };
 
 export async function POST(req: Request) {
-  if (!authorized(req)) {
+  const ok = authorized(req);
+  console.log("[process-queue] POST in", {
+    authorized: ok,
+    hasCronSecret: Boolean(process.env.CRON_SECRET),
+    hasScrapeToken: Boolean(process.env.SCRAPE_TOKEN),
+  });
+  if (!ok) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
@@ -45,10 +51,13 @@ export async function POST(req: Request) {
     .limit(1);
 
   if (!next) {
+    console.log("[process-queue] no queued apps for", body.userId ?? "all");
     return NextResponse.json({ done: true, message: "No queued applications." });
   }
 
+  console.log("[process-queue] running submission", next.id);
   const result = await runSubmission(next.id);
+  console.log("[process-queue] submission result", { id: next.id, ok: result.ok, ats: result.ats });
 
   // If more queued, re-trigger self.
   const remaining = await db

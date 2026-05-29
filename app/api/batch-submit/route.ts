@@ -51,19 +51,28 @@ export async function POST(req: Request) {
     .onConflictDoNothing({ target: [application.userId, application.jobId] })
     .returning({ id: application.id });
 
-  // Kick off the queue processor in the background. after() guarantees the
-  // fetch runs even after we've returned the response to the client.
   const origin = new URL(req.url).origin;
-  const auth = `Bearer ${process.env.CRON_SECRET ?? process.env.SCRAPE_TOKEN ?? ""}`;
+  const secret = process.env.CRON_SECRET ?? process.env.SCRAPE_TOKEN ?? "";
+  const auth = `Bearer ${secret}`;
+
+  console.log("[batch-submit] queued", {
+    userId: user.id,
+    insertedCount: inserted.length,
+    secretLen: secret.length,
+    origin,
+  });
+
   after(async () => {
     try {
-      await fetch(`${origin}/api/process-queue`, {
+      console.log("[batch-submit] after() firing process-queue kickoff");
+      const res = await fetch(`${origin}/api/process-queue`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: auth },
         body: JSON.stringify({ userId: user.id }),
       });
+      console.log("[batch-submit] kickoff response", res.status);
     } catch (e) {
-      console.error("process-queue kickoff failed:", e);
+      console.error("[batch-submit] kickoff failed:", e);
     }
   });
 

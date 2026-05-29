@@ -181,32 +181,24 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
 
         <div className="col-span-4">
           <Card className="p-6 sticky top-8">
-            <SectionLabel>Estimate</SectionLabel>
-            <div className="mt-3 text-[15px] font-medium">This run</div>
-            <div className="mt-5 space-y-3 text-[13.5px]">
-              <EstimateRow label="Search" value="free" />
-              <EstimateRow label={`Tailoring · ${batch} apps`} value={`$${(batch * 0.22).toFixed(2)}`} />
-              <EstimateRow label="Screener answers" value={`$${(batch * 0.06).toFixed(2)}`} />
-              <EstimateRow label="Submission automation" value={`$${(batch * 0.04).toFixed(2)}`} />
-              <div className="border-t border-line pt-3 mt-3 flex items-center justify-between">
-                <span className="text-[13px] font-medium">Total</span>
-                <span className="text-[18px] font-semibold tabular-nums">${(batch * 0.32).toFixed(2)}</span>
-              </div>
+            <SectionLabel>This run</SectionLabel>
+            <div className="mt-3 text-[15px] font-medium">
+              {batch} {batch === 1 ? "application" : "applications"}
             </div>
-
-            <div className="mt-5 p-3 rounded-sm" style={{ background: "var(--accent-soft)" }}>
-              <div className="text-[12px] font-medium" style={{ color: "var(--accent-hi)" }}>
-                Included in your Pro plan
-              </div>
-              <div className="text-[11.5px] mt-0.5" style={{ color: "var(--accent-hi)", opacity: 0.85 }}>
-                88 of 100 applications remaining this month.
-              </div>
+            <div className="mt-5 space-y-3 text-[13.5px]">
+              <EstimateRow label="Roles" value={String(keywords.length || "—")} />
+              <EstimateRow label="Locations" value={String(locations.length || "—")} />
+              <EstimateRow label="Min salary" value={`$${salary}k`} />
+              <EstimateRow
+                label="Submit mode"
+                value={mode === "review-each" ? "Review" : mode === "auto-high" ? "Auto >85" : "Auto all"}
+              />
             </div>
 
             <Button
               variant="primary"
               size="lg"
-              className="w-full mt-5"
+              className="w-full mt-6"
               onClick={() => {
                 const params = new URLSearchParams();
                 if (keywords.length > 0) params.set("roles", keywords.join(","));
@@ -219,7 +211,7 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
               Find &amp; apply
             </Button>
             <p className="mt-3 text-[11.5px] text-mute text-center lh-body">
-              Estimated time to first match: <span className="text-ink font-medium">~90 seconds</span>
+              Each application takes about 30–60 seconds end-to-end.
             </p>
           </Card>
         </div>
