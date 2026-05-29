@@ -2,7 +2,11 @@ import { and, asc, eq } from "drizzle-orm";
 import { after, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
 import { application } from "@/lib/db/schema";
-import { runSubmission } from "@/lib/submit/orchestrate";
+
+// Don't statically import runSubmission — it pulls in playwright-core and
+// @browserbasehq/sdk at module load, which throws under Vercel's serverless
+// bundling for this route. Lazy-load inside the handler so the route itself
+// mounts cleanly and we can return real error messages.
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -57,6 +61,7 @@ export async function POST(req: Request) {
     }
 
     console.log("[process-queue] running submission", next.id);
+    const { runSubmission } = await import("@/lib/submit/orchestrate");
     const result = await runSubmission(next.id);
     console.log("[process-queue] submission result", { id: next.id, ok: result.ok, ats: result.ats });
 
