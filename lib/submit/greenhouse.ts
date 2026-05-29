@@ -155,14 +155,18 @@ async function fillCoverLetter(
   profile: SubmissionProfile,
   steps: SubmissionStep[],
 ): Promise<void> {
-  // Locate the Cover Letter section via direct ancestor-with-label selector
-  // — much more reliable than walking the DOM with ElementHandle. This
-  // matches a div that contains BOTH a label with text "Cover Letter" AND
-  // a file input or button.
+  // Locate the Cover Letter section. Tried several variants because the
+  // modern Greenhouse board sometimes uses a <label>, sometimes a <h3>,
+  // sometimes a sibling div with the text.
   const sectionSelectors = [
-    "div:has(> label:text-matches('cover letter', 'i')):has(input[type='file'])",
-    "div:has(label:text-matches('cover letter', 'i'))",
-    "fieldset:has(legend:text-matches('cover letter', 'i'))",
+    "div:has(> label:has-text('Cover Letter'))",
+    "div:has(label:has-text('Cover Letter'))",
+    "div:has(> h3:has-text('Cover Letter'))",
+    "div:has(h3:has-text('Cover Letter'))",
+    "fieldset:has(legend:has-text('Cover Letter'))",
+    // Walk up from the file input itself if its name hints at cover letter.
+    "div:has(input[type='file'][name*='cover' i])",
+    "div:has(input[name*='cover_letter' i])",
   ];
   let section: Locator | null = null;
   for (const sel of sectionSelectors) {
@@ -557,8 +561,14 @@ async function fillByKind(
 }
 
 /**
- * React-Select interaction: click the control to open, type the answer into
- * the live combobox input, wait for filtered options, click the first one.
+ * React-Select interaction: click the control to open, ENUMERATE the visible
+ * options, find the one whose text best matches our intended answer, and
+ * click that. Typing-to-filter is fragile (silently selects nothing when no
+ * exact match) — enumeration with fuzzy match is reliable.
+ *
+ * For decline-style EEO answers, fall back through a wider list of synonyms
+ * since labels vary by board ("Decline to self-identify" / "Prefer not to
+ * say" / "I do not wish to answer" / "I choose not to disclose").
  */
 async function fillReactSelect(
   page: Page,
@@ -570,34 +580,112 @@ async function fillReactSelect(
   const label = question.slice(0, 60);
   try {
     await control.click({ timeout: 2000 });
-    await page.waitForTimeout(120);
-
-    // The opened menu's input is now focused on the page. Type to filter.
-    await page.keyboard.type(answer.slice(0, 50), { delay: 6 });
     await page.waitForTimeout(180);
 
-    // Look for visible options. Greenhouse react-select uses
-    // [class*=option] or role=option; try both.
-    const optionLocs = [
+    // Expand the candidate answer list with decline synonyms so EEO
+    // dropdowns commit something regardless of label phrasing.
+    const candidates = isDeclineAnswer(answer)
+      ? DECLINE_SYNONYMS
+      : [answer, ...answerSynonyms(answer)];
+
+    const optionSelectors = [
       "[role='option']:visible",
-      "[class*='option']:visible:not([class*='disabled'])",
-      "[class*='Option']:visible:not([class*='disabled'])",
+      "[class*='option']:visible:not([class*='disabled' i]):not([class*='Disabled' i])",
+      "[class*='Option']:visible:not([class*='disabled' i])",
     ];
-    for (const sel of optionLocs) {
-      const opt = page.locator(sel).first();
-      if ((await opt.count()) === 0) continue;
-      try {
-        await opt.click({ timeout: 2000 });
-        steps.push({ step: "selected_react_option", detail: label, ok: true });
-        return true;
-      } catch {
-        // try next
+
+    // Read all visible option texts so we can fuzzy-pick.
+    let optionEls: Locator[] = [];
+    for (const sel of optionSelectors) {
+      const found = await page.locator(sel).all();
+      if (found.length > 0) {
+        optionEls = found;
+        break;
       }
     }
-    // Fallback: hit Enter and hope it picks the highlighted match.
-    await page.keyboard.press("Enter");
-    steps.push({ step: "selected_react_option_via_enter", detail: label, ok: true });
-    return true;
+
+    if (optionEls.length === 0) {
+      // Some React-Selects don't render the menu until you type. Type a few
+      // chars from the first candidate, then re-enumerate.
+      const probe = candidates[0]?.slice(0, 4) ?? "";
+      if (probe) {
+        await page.keyboard.type(probe, { delay: 6 });
+        await page.waitForTimeout(180);
+      }
+      for (const sel of optionSelectors) {
+        const found = await page.locator(sel).all();
+        if (found.length > 0) {
+          optionEls = found;
+          break;
+        }
+      }
+    }
+
+    if (optionEls.length === 0) {
+      await page.keyboard.press("Escape").catch(() => {});
+      steps.push({
+        step: "failed_react_select",
+        detail: `${label}: no options visible`,
+        ok: false,
+      });
+      return false;
+    }
+
+    // Read option texts once (we'll need them for scoring).
+    const optionTexts: string[] = [];
+    for (const opt of optionEls) {
+      const t = ((await opt.textContent().catch(() => "")) ?? "").trim();
+      optionTexts.push(t);
+    }
+
+    let bestIdx = -1;
+    let bestScore = 0;
+    for (const cand of candidates) {
+      for (let i = 0; i < optionTexts.length; i++) {
+        const t = optionTexts[i];
+        if (!t) continue;
+        const score = textSimilarity(t, cand);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIdx = i;
+        }
+        // Exact-prefix bump — covers "Decline to Self-Identify" vs
+        // "Decline to self-identify".
+        if (t.toLowerCase().startsWith(cand.toLowerCase().slice(0, 8))) {
+          if (score + 0.5 > bestScore) {
+            bestScore = score + 0.5;
+            bestIdx = i;
+          }
+        }
+      }
+    }
+
+    if (bestIdx < 0) {
+      await page.keyboard.press("Escape").catch(() => {});
+      steps.push({
+        step: "failed_react_select",
+        detail: `${label}: no option matched (saw ${optionTexts.slice(0, 4).join(" | ")})`,
+        ok: false,
+      });
+      return false;
+    }
+
+    try {
+      await optionEls[bestIdx].click({ timeout: 2000 });
+      steps.push({
+        step: "selected_react_option",
+        detail: `${label} → ${optionTexts[bestIdx].slice(0, 40)}`,
+        ok: true,
+      });
+      return true;
+    } catch (e) {
+      steps.push({
+        step: "failed_react_select_click",
+        detail: `${label}: ${e instanceof Error ? e.message : "click err"}`,
+        ok: false,
+      });
+      return false;
+    }
   } catch (e) {
     steps.push({
       step: "failed_react_select",
@@ -607,6 +695,38 @@ async function fillReactSelect(
     await page.keyboard.press("Escape").catch(() => {});
     return false;
   }
+}
+
+const DECLINE_SYNONYMS = [
+  "Decline to self-identify",
+  "Decline to Self-Identify",
+  "Prefer not to say",
+  "Prefer not to answer",
+  "I do not wish to answer",
+  "I don't wish to answer",
+  "I choose not to disclose",
+  "Do not wish to disclose",
+  "Decline to answer",
+];
+
+function isDeclineAnswer(answer: string): boolean {
+  return /decline|prefer not|wish to answer|not to disclose|not to say/i.test(answer);
+}
+
+function answerSynonyms(answer: string): string[] {
+  // Yes/No expansions so a "Yes" answer also matches "Yes, I am" etc.
+  const a = answer.trim();
+  if (/^yes$/i.test(a)) return ["Yes", "Yes, I am", "Yes I do", "I am", "Affirmative"];
+  if (/^no$/i.test(a))
+    return [
+      "No",
+      "No, I am not",
+      "I am not",
+      "Not at this time",
+      "I am NOT a protected veteran",
+      "I do not have a disability",
+    ];
+  return [];
 }
 
 async function fillRadioGroup(
