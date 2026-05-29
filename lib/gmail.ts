@@ -3,12 +3,17 @@ import { google, type gmail_v1 } from "googleapis";
 export const GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
 
 function appUrl(req?: Request): string {
+  // Explicit override always wins.
   if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  // Prefer the host the user is actually visiting — that's what Google's
+  // redirect URI registry was set against (e.g. onbehalf-ten.vercel.app).
+  // process.env.VERCEL_URL gives us a unique per-deploy URL we'd have to
+  // re-register on every push, which is wrong.
   if (req) {
     const u = new URL(req.url);
     return `${u.protocol}//${u.host}`;
   }
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   return "http://localhost:3000";
 }
 
