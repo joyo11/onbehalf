@@ -246,7 +246,7 @@ function OnboardingInner() {
           {step === 1 && <OnbResume parsed={parsed} onParsed={handleParsed} />}
           {step === 2 && <OnbAbout parsed={parsed} form={about} setForm={setAbout} />}
           {step === 3 && <OnbRoles roles={roles} setRoles={setRoles} />}
-          {step === 4 && <OnbExperience />}
+          {step === 4 && <OnbExperience parsed={parsed} />}
           {step === 5 && <OnbPreferences prefs={prefs} setPrefs={setPrefs} />}
           {step === 6 && <OnbVoice value={voice} onChange={setVoice} />}
         </div>
@@ -913,43 +913,101 @@ function Segmented({
 }
 
 /* ---------- Step 4: Experience ---------- */
-function OnbExperience() {
-  const [skills, setSkills] = useState<SkillYear[]>(SKILL_YEARS);
+function OnbExperience({ parsed }: { parsed: ParsedResume | null }) {
+  // Build the initial skills list from the parsed resume. If the resume parse
+  // didn't return any skills, start empty and let the user add manually.
+  const seeded: SkillYear[] = (parsed?.skills ?? []).map((s) => ({
+    skill: s.skill,
+    years: s.years ?? 0,
+    level:
+      s.level && ["Beginner", "Intermediate", "Advanced", "Expert"].includes(s.level)
+        ? (s.level as SkillYear["level"])
+        : "Intermediate",
+  }));
+  const [skills, setSkills] = useState<SkillYear[]>(seeded);
+  const [newSkill, setNewSkill] = useState("");
+
+  function addSkill() {
+    const t = newSkill.trim();
+    if (!t) return;
+    if (skills.some((s) => s.skill.toLowerCase() === t.toLowerCase())) {
+      setNewSkill("");
+      return;
+    }
+    setSkills([...skills, { skill: t, years: 0, level: "Intermediate" }]);
+    setNewSkill("");
+  }
+
   return (
     <div>
       <StepHeader
         eyebrow="Step 4"
         title="How long have you been doing this?"
-        body="We auto-extracted these from your resume. Tweak the years if anything's off — they go directly into screener answers."
+        body={
+          parsed
+            ? "We auto-extracted these from your resume. Tweak the years if anything's off — they go directly into screener answers."
+            : "Upload your resume in step 1 to auto-fill, or add skills manually below."
+        }
       />
 
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Total years of experience"><Input defaultValue="6 years" /></Field>
-        <Field label="Years in current role"><Input defaultValue="2.5 years" /></Field>
-      </div>
+      {skills.length === 0 ? (
+        <Card className="p-8 text-center">
+          <Icon name="sparkles" size={20} className="text-mute mx-auto" />
+          <p className="text-[13.5px] text-mute mt-3 max-w-md mx-auto">
+            No skills detected from your resume yet. Add them below or skip — you can always edit
+            later.
+          </p>
+        </Card>
+      ) : (
+        <>
+          <SectionLabel className="mb-3">Per-skill experience · from your resume</SectionLabel>
+          <Card className="divide-y divide-line">
+            {skills.map((s, i) => (
+              <SkillRow
+                key={`${s.skill}-${i}`}
+                skill={s}
+                onChange={(updated) => {
+                  const next = [...skills];
+                  next[i] = updated;
+                  setSkills(next);
+                }}
+                onRemove={() => setSkills(skills.filter((_, j) => j !== i))}
+              />
+            ))}
+          </Card>
+        </>
+      )}
 
-      <SectionLabel className="mt-10 mb-3">Per-skill experience · auto-extracted</SectionLabel>
-      <Card className="divide-y divide-line">
-        {skills.map((s, i) => (
-          <SkillRow
-            key={s.skill}
-            skill={s}
-            onChange={(updated) => {
-              const next = [...skills];
-              next[i] = updated;
-              setSkills(next);
-            }}
-          />
-        ))}
-      </Card>
-      <button className="mt-3 text-[12.5px] flex items-center gap-1.5" style={{ color: "var(--accent-hi)" }}>
-        <Icon name="plus" size={13} /> Add another skill
-      </button>
+      <div className="mt-4 flex items-center gap-2">
+        <input
+          value={newSkill}
+          onChange={(e) => setNewSkill(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addSkill();
+            }
+          }}
+          placeholder="Add a skill (e.g. Python, AWS, SQL)…"
+          className="h-9 flex-1 px-3 rounded-ctrl border border-line bg-white text-[13px] focus-ring"
+        />
+        <Button variant="secondary" size="sm" onClick={addSkill} leading={<Icon name="plus" size={12} />}>
+          Add
+        </Button>
+      </div>
     </div>
   );
 }
 
-function SkillRow({ skill, onChange }: { skill: SkillYear; onChange: (s: SkillYear) => void }) {
+function SkillRow({
+  skill,
+  onChange,
+  onRemove,
+}: {
+  skill: SkillYear;
+  onChange: (s: SkillYear) => void;
+  onRemove: () => void;
+}) {
   const dec = () => onChange({ ...skill, years: Math.max(0, skill.years - 1) });
   const inc = () => onChange({ ...skill, years: skill.years + 1 });
   return (
@@ -967,6 +1025,13 @@ function SkillRow({ skill, onChange }: { skill: SkillYear; onChange: (s: SkillYe
           <Icon name="plus" size={13} />
         </button>
       </div>
+      <button
+        onClick={onRemove}
+        className="text-mute hover:text-error text-[14px] -ml-1"
+        aria-label="Remove"
+      >
+        ×
+      </button>
     </div>
   );
 }

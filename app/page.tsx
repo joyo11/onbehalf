@@ -18,7 +18,6 @@ export default function LandingScreen() {
       <LandingNav />
       <LandingHero />
       <LandingHowItWorks />
-      <LandingStats />
       <LandingPricing />
       <LandingFooter />
     </div>
@@ -261,26 +260,6 @@ function LandingHowItWorks() {
 }
 
 /* ---------- Stats strip ---------- */
-function LandingStats() {
-  const stats = [
-    { v: "4.2 min", l: "Average time to first confirmed application" },
-    { v: "34%", l: "Of submissions get a recruiter reply within 7 days" },
-    { v: "12,400", l: "Applications submitted by Onbehalf this week" },
-    { v: "$0", l: "Charged until you upgrade past the free tier" },
-  ];
-  return (
-    <section className="border-y border-line bg-white">
-      <div className="max-w-[1120px] mx-auto px-6 py-10 grid grid-cols-4 gap-8">
-        {stats.map((s) => (
-          <div key={s.l}>
-            <div className="text-[28px] font-semibold tracking-[-0.02em] tabular-nums">{s.v}</div>
-            <div className="text-[12.5px] text-mute mt-1.5 lh-body">{s.l}</div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
 
 /* ---------- Pricing ---------- */
 type Plan = {
