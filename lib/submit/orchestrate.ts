@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { application, applicationEvent, job, profile } from "../db/schema";
+import { tailorForJob } from "../tailor";
 import { startSession } from "./browserbase";
 import { fillGreenhouseForm, isGreenhousePage } from "./greenhouse";
 import type { SubmissionProfile, SubmissionResult, SubmissionStep } from "./types";
@@ -56,6 +57,46 @@ export async function runSubmission(applicationId: string): Promise<SubmissionRe
     };
   }
 
+  // If this application hasn't been tailored yet (came in via /go batch mode
+  // rather than the single-job /review path), run tailoring now so we have a
+  // real cover letter + summary + screener answers before filling the form.
+  let coverLetterText = row.app.coverLetterText ?? "";
+  let tailoringSummary = row.app.tailoringSummary;
+  let screeners = ((row.app.customAnswersJson as { screeners?: ScreenerAnswer[] } | null)?.screeners ?? []) as ScreenerAnswer[];
+
+  const needsTailoring = !coverLetterText && !tailoringSummary;
+  if (needsTailoring) {
+    await db
+      .update(application)
+      .set({ status: "tailoring" })
+      .where(eq(application.id, applicationId));
+    await logEvent(applicationId, "tailoring_started", {});
+    try {
+      // tailorForJob returns Claude-generated tailoring + cover + screeners.
+      const tail = await tailorForJob(
+        { id: row.app.userId, clerkId: "", email: "", gmailConnectedAt: null, gmailRefreshToken: null, stripeCustomerId: null, plan: "free", applicationsThisMonth: 0, createdAt: new Date() },
+        row.jobRow.id,
+      );
+      coverLetterText = tail.coverLetter.cover_letter;
+      tailoringSummary = tail.tailoring.summary;
+      screeners = tail.screeners.answers;
+      await db
+        .update(application)
+        .set({
+          coverLetterText,
+          tailoringSummary,
+          customAnswersJson: { screeners },
+        })
+        .where(eq(application.id, applicationId));
+      await logEvent(applicationId, "tailoring_complete", { summary: tailoringSummary });
+    } catch (e) {
+      await logEvent(applicationId, "tailoring_failed", {
+        error: e instanceof Error ? e.message : "unknown",
+      });
+      // Continue with what we have; the form fill can still happen.
+    }
+  }
+
   await db
     .update(application)
     .set({ status: "submitting", attempts: row.app.attempts + 1 })
@@ -67,8 +108,6 @@ export async function runSubmission(applicationId: string): Promise<SubmissionRe
     applyUrl: row.jobRow.applyUrl,
     realSubmitEnabled,
   });
-
-  const screeners = ((row.app.customAnswersJson as { screeners?: ScreenerAnswer[] } | null)?.screeners ?? []) as ScreenerAnswer[];
 
   const { first, last } = splitName(row.profileRow.fullName);
   const subProfile: SubmissionProfile = {
@@ -92,7 +131,7 @@ export async function runSubmission(applicationId: string): Promise<SubmissionRe
     resumeFileName:
       row.profileRow.resumeFileName ??
       `${(row.profileRow.fullName ?? "resume").replace(/\s+/g, "_")}_resume.pdf`,
-    coverLetter: row.app.coverLetterText ?? "",
+    coverLetter: coverLetterText,
     screeners,
   };
 
