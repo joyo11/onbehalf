@@ -55,13 +55,13 @@ function isValidRole(s: string): boolean {
 }
 
 const ONBOARDING_STEPS = [
-  { id: 1, label: "Resume" },
-  { id: 2, label: "About you" },
-  { id: 3, label: "Target roles" },
-  { id: 4, label: "Experience" },
-  { id: 5, label: "Preferences" },
-  { id: 6, label: "Voice sample" },
-  { id: 7, label: "Connect Gmail" },
+  { id: 1, label: "Connect Gmail" },
+  { id: 2, label: "Resume" },
+  { id: 3, label: "About you" },
+  { id: 4, label: "Target roles" },
+  { id: 5, label: "Experience" },
+  { id: 6, label: "Preferences" },
+  { id: 7, label: "Voice sample" },
 ];
 
 export type AboutForm = {
@@ -134,13 +134,13 @@ function OnboardingInner() {
   useEffect(() => {
     if (sp.get("gmail") === "connected") {
       setGmailConnected(true);
-      setStep(7);
+      setStep(1);
       router.replace("/onboarding");
     }
     const err = sp.get("gmail_error");
     if (err) {
       setGmailError(err);
-      setStep(7);
+      setStep(1);
       router.replace("/onboarding");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -169,8 +169,9 @@ function OnboardingInner() {
   }
 
   const canContinue = (() => {
-    if (step === 1) return parsed !== null;
-    if (step === 2) {
+    if (step === 1) return gmailConnected;
+    if (step === 2) return parsed !== null;
+    if (step === 3) {
       const baseReq: (keyof AboutForm)[] = [
         "name",
         "email",
@@ -186,8 +187,8 @@ function OnboardingInner() {
       if (about.github.trim() && !isValidGitHub(about.github)) return false;
       return true;
     }
-    if (step === 3) return roles.length >= 1;
-    if (step === 5) {
+    if (step === 4) return roles.length >= 1;
+    if (step === 6) {
       if (!prefs.workAuth) return false;
       const wp = prefs.workPreference;
       if (!wp.remote && !wp.hybrid && !wp.onsite) return false;
@@ -195,8 +196,7 @@ function OnboardingInner() {
       if (!prefs.earliestStartDate) return false;
       return true;
     }
-    if (step === 6) return voice.trim().split(/\s+/).filter(Boolean).length >= 30;
-    if (step === 7) return gmailConnected;
+    if (step === 7) return voice.trim().split(/\s+/).filter(Boolean).length >= 30;
     return true;
   })();
 
@@ -245,13 +245,13 @@ function OnboardingInner() {
 
       <div className="max-w-[760px] mx-auto px-6 py-14">
         <div key={step} className="anim-pop">
-          {step === 1 && <OnbResume parsed={parsed} onParsed={handleParsed} />}
-          {step === 2 && <OnbAbout parsed={parsed} form={about} setForm={setAbout} />}
-          {step === 3 && <OnbRoles roles={roles} setRoles={setRoles} />}
-          {step === 5 && <OnbPreferences prefs={prefs} setPrefs={setPrefs} />}
-          {step === 6 && <OnbVoice value={voice} onChange={setVoice} />}
-          {step === 7 && <OnbGmail connected={gmailConnected} error={gmailError} />}
-          {step === 4 && <OnbExperience />}
+          {step === 1 && <OnbGmail connected={gmailConnected} error={gmailError} />}
+          {step === 2 && <OnbResume parsed={parsed} onParsed={handleParsed} />}
+          {step === 3 && <OnbAbout parsed={parsed} form={about} setForm={setAbout} />}
+          {step === 4 && <OnbRoles roles={roles} setRoles={setRoles} />}
+          {step === 5 && <OnbExperience />}
+          {step === 6 && <OnbPreferences prefs={prefs} setPrefs={setPrefs} />}
+          {step === 7 && <OnbVoice value={voice} onChange={setVoice} />}
         </div>
 
         <div className="mt-12 flex items-center justify-between">
@@ -270,11 +270,11 @@ function OnboardingInner() {
             {!canContinue && !finishing && !finishError && (
               <span className="text-[12.5px] text-mute">
                 {step === 1
-                  ? "Upload your resume to continue"
-                  : step === 6
-                    ? "Write at least 30 words to continue"
+                  ? "Connect Gmail to continue"
+                  : step === 2
+                    ? "Upload your resume to continue"
                     : step === 7
-                      ? "Connect Gmail (or skip-equivalent) to continue"
+                      ? "Write at least 30 words to continue"
                       : "Fill in the required fields to continue"}
               </span>
             )}

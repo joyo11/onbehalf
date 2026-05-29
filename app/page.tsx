@@ -66,7 +66,7 @@ function LandingHero() {
             Onbehalf tailors every submission and only forwards the ones worth your time.
           </p>
           <div className="mt-8 flex items-center gap-3">
-            <Link href="/onboarding">
+            <Link href="/sign-up">
               <Button size="lg" variant="primary" trailing={<Icon name="arrow-right" size={15} />}>
                 Get started — it&apos;s free
               </Button>
