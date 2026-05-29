@@ -139,13 +139,28 @@ export async function fillGreenhouseForm(
   // pick a "decline" option rather than leave blank.
   await declineDemographics(page, steps);
 
+  // Give late-rendering React forms a moment to mount the submit button
+  // before we look for it.
+  await page.waitForTimeout(1500);
+
   // ── Find the submit button (but don't click) ──────────────
+  // Cast wide. Greenhouse boards style their submit as button, input, or
+  // even a styled div/anchor depending on the board version. Match any
+  // visible interactive thing with "Submit" / "Send" text.
   const submitSelectors = [
-    "button[type='submit']",
-    "input[type='submit']",
-    "button:has-text('Submit Application')",
-    "button:has-text('Submit application')",
-    "button:has-text('Submit')",
+    "button[type='submit']:visible",
+    "input[type='submit']:visible",
+    "button:has-text('Submit Application'):visible",
+    "button:has-text('Submit application'):visible",
+    "button:has-text('Submit'):visible",
+    "[role='button']:has-text('Submit Application'):visible",
+    "[role='button']:has-text('Submit'):visible",
+    "button:has-text('Send Application'):visible",
+    "button:has-text('Send'):visible",
+    "a:has-text('Submit Application'):visible",
+    "[aria-label*='Submit' i]:visible",
+    "[data-qa*='submit' i]:visible",
+    "[id*='submit' i][type='button']:visible",
   ];
   let submitSelector: string | null = null;
   for (const sel of submitSelectors) {

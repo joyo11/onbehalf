@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../db/client";
 import { application, applicationEvent, job, profile, user as userTable } from "../db/schema";
 import { tailorForJob } from "../tailor";
@@ -9,6 +9,78 @@ import type { SubmissionProfile, SubmissionResult, SubmissionStep } from "./type
 const APPLY_TIMEOUT_MS = 50_000;
 
 type ScreenerAnswer = { question: string; answer: string; confidence: string };
+
+/**
+ * Many "apply now" links land on a description page that either:
+ *   (a) embeds the Greenhouse form via an iframe, or
+ *   (b) has a button you must click to reach the form.
+ * Resolve either to a page that's actually a form.
+ */
+async function unwrapToFormPage(
+  page: import("playwright-core").Page,
+  applicationId: string,
+): Promise<void> {
+  // Case (a): iframe embed. Skip the parent page entirely.
+  const iframeSrc = await page
+    .locator("iframe[src*='greenhouse.io'], iframe[src*='boards.greenhouse.io']")
+    .first()
+    .getAttribute("src")
+    .catch(() => null);
+  if (iframeSrc) {
+    await logEvent(applicationId, "iframe_detected", { src: iframeSrc });
+    try {
+      const absoluteSrc = new URL(iframeSrc, page.url()).toString();
+      await page.goto(absoluteSrc, { waitUntil: "domcontentloaded", timeout: APPLY_TIMEOUT_MS });
+      await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
+      await logEvent(applicationId, "unwrapped_to_iframe_src", { url: page.url() });
+      return;
+    } catch (e) {
+      await logEvent(applicationId, "unwrap_iframe_failed", {
+        error: e instanceof Error ? e.message : "unknown",
+      });
+    }
+  }
+
+  // Case (b): is there a form already? Quick check — if first_name or any
+  // resume upload is visible, we're on the form, nothing to do.
+  const onForm = await page
+    .locator("input[name='first_name'], input[id*='first_name'], input[type='file'][name*='resume']")
+    .first()
+    .isVisible({ timeout: 1500 })
+    .catch(() => false);
+  if (onForm) return;
+
+  // Look for an Apply button to click through.
+  const applyButtonCandidates = [
+    "a:has-text('Apply Now')",
+    "a:has-text('Apply for this job')",
+    "a:has-text('Apply')",
+    "button:has-text('Apply Now')",
+    "button:has-text('Apply for this job')",
+    "button:has-text('Apply')",
+    "[role='button']:has-text('Apply')",
+  ];
+  for (const sel of applyButtonCandidates) {
+    const btn = page.locator(sel).first();
+    if ((await btn.count()) === 0) continue;
+    if (!(await btn.isVisible().catch(() => false))) continue;
+    try {
+      await logEvent(applicationId, "clicking_apply", { selector: sel });
+      await Promise.all([
+        page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {}),
+        btn.click({ timeout: 5000 }),
+      ]);
+      await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
+      await logEvent(applicationId, "unwrapped_via_apply_click", { url: page.url() });
+      return;
+    } catch (e) {
+      await logEvent(applicationId, "apply_click_failed", {
+        selector: sel,
+        error: e instanceof Error ? e.message : "unknown",
+      });
+    }
+  }
+}
 
 async function logEvent(applicationId: string, step: string, payload: unknown) {
   try {
@@ -31,6 +103,29 @@ function splitName(full: string | null): { first: string; last: string } {
 
 export async function runSubmission(applicationId: string): Promise<SubmissionResult> {
   const realSubmitEnabled = process.env.REAL_SUBMIT_ENABLED === "true";
+
+  // Atomically claim this application. If another worker already moved it
+  // past 'queued' (e.g. user double-clicked Approve & submit and two
+  // process-queue runs raced), bail out — we don't want two parallel
+  // Browserbase sessions spending money to fail twice.
+  const claim = await db
+    .update(application)
+    .set({ status: "tailoring" })
+    .where(and(eq(application.id, applicationId), eq(application.status, "queued")))
+    .returning({ id: application.id });
+  if (claim.length === 0) {
+    // Someone else got there first (or the row isn't in 'queued' state
+    // anymore). Skip.
+    return {
+      ok: false,
+      ats: "unknown",
+      steps: [],
+      finalUrl: "",
+      liveViewUrl: "",
+      realSubmitted: false,
+      error: "Already claimed by another worker.",
+    };
+  }
 
   // Fetch the application + joined data
   const [row] = await db
@@ -66,10 +161,7 @@ export async function runSubmission(applicationId: string): Promise<SubmissionRe
 
   const needsTailoring = !coverLetterText && !tailoringSummary;
   if (needsTailoring) {
-    await db
-      .update(application)
-      .set({ status: "tailoring" })
-      .where(eq(application.id, applicationId));
+    // Status already set to 'tailoring' by the claim above.
     await logEvent(applicationId, "tailoring_started", {});
     try {
       // Pull the real user row so tailorForJob has a proper email for the
@@ -166,11 +258,22 @@ export async function runSubmission(applicationId: string): Promise<SubmissionRe
     });
     await session.page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
 
+    // Handle intermediate "Apply Now" detail pages (Datadog, Stripe-style
+    // careers sites). If the page has an Apply button but no form fields,
+    // click through to the real form. Also handle the iframe-embed case
+    // (Greenhouse JS widget embedded on a company careers domain) by
+    // navigating straight to the iframe's src.
+    await unwrapToFormPage(session.page, applicationId);
+
     finalUrl = session.page.url();
     await logEvent(applicationId, "page_loaded", { url: finalUrl });
 
     // Detect ATS
-    if (row.jobRow.source === "greenhouse" || (await isGreenhousePage(session.page))) {
+    if (
+      row.jobRow.source === "greenhouse" ||
+      /greenhouse\.io/.test(finalUrl) ||
+      (await isGreenhousePage(session.page))
+    ) {
       ats = "greenhouse";
     } else if (/lever\.co/.test(finalUrl)) {
       ats = "lever";
