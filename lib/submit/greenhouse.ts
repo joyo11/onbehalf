@@ -155,11 +155,25 @@ async function fillCoverLetter(
   profile: SubmissionProfile,
   steps: SubmissionStep[],
 ): Promise<void> {
-  // Locate the Cover Letter section so we don't accidentally fill resume
-  // inputs etc. Greenhouse renders a label/heading then the controls.
-  const section = await findSectionByLabel(page, /cover letter/i);
+  // Locate the Cover Letter section via direct ancestor-with-label selector
+  // — much more reliable than walking the DOM with ElementHandle. This
+  // matches a div that contains BOTH a label with text "Cover Letter" AND
+  // a file input or button.
+  const sectionSelectors = [
+    "div:has(> label:text-matches('cover letter', 'i')):has(input[type='file'])",
+    "div:has(label:text-matches('cover letter', 'i'))",
+    "fieldset:has(legend:text-matches('cover letter', 'i'))",
+  ];
+  let section: Locator | null = null;
+  for (const sel of sectionSelectors) {
+    const loc = page.locator(sel).first();
+    if ((await loc.count()) > 0) {
+      section = loc;
+      break;
+    }
+  }
 
-  // (a) Attach PDF
+  // (a) Attach PDF — file input lives inside the Cover Letter section.
   if (section) {
     const fileInput = section.locator("input[type='file']").first();
     if ((await fileInput.count()) > 0) {
@@ -206,6 +220,8 @@ async function fillCoverLetter(
         });
       }
     }
+  } else {
+    steps.push({ step: "no_cover_letter_section", detail: "no Cover Letter label found", ok: false });
   }
 
   // (c) Bare textarea — legacy boards
@@ -220,50 +236,6 @@ async function fillCoverLetter(
     "cover_letter",
     steps,
   );
-}
-
-/**
- * Find the container that holds a section identified by its heading/label.
- * Returns the nearest ancestor (form section or fieldset) so locators
- * scoped to it only see fields belonging to that section.
- */
-async function findSectionByLabel(page: Page, pattern: RegExp): Promise<Locator | null> {
-  const candidates = await page
-    .locator("label, legend, h2, h3, h4, [class*='label' i]")
-    .all();
-  for (const c of candidates) {
-    const text = ((await c.textContent().catch(() => "")) ?? "").trim();
-    if (!pattern.test(text)) continue;
-    // Walk up to a sensible container — fieldset, form-section div, or
-    // the immediate parent if nothing nicer.
-    const handle = await c.elementHandle();
-    if (!handle) continue;
-    const containerHandle = await handle.evaluateHandle((el: Element) => {
-      let cur: Element | null = el;
-      for (let i = 0; i < 5 && cur; i++) {
-        const parentEl: Element | null = cur.parentElement;
-        if (!parentEl) break;
-        cur = parentEl;
-        if (
-          cur.tagName === "FIELDSET" ||
-          /(question|field|section|application-question|cover)/i.test(cur.className || "")
-        ) {
-          return cur;
-        }
-      }
-      return el.parentElement;
-    });
-    if (containerHandle) {
-      const el = containerHandle.asElement();
-      if (el) {
-        // Wrap as Locator by attribute (best-effort: take its data-attr or first child path).
-        // pw doesn't expose ElementHandle→Locator directly; create a locator scoped to it.
-        // Simplest: return a locator that uses :has(label:has-text(...))
-        return page.locator(`*:has(> label:has-text(${JSON.stringify(text)})), fieldset:has(legend:has-text(${JSON.stringify(text)}))`).first();
-      }
-    }
-  }
-  return null;
 }
 
 /**
@@ -435,44 +407,84 @@ async function fillByLabel(
   answer: string,
   steps: SubmissionStep[],
 ): Promise<boolean> {
-  // 1. Direct <label for="X"> link.
-  const forId = await labelEl.getAttribute("for").catch(() => null);
-  if (forId) {
-    const target = page.locator(`#${cssEscape(forId)}`).first();
-    if ((await target.count()) > 0) {
-      const ok = await fillAnyInput(page, target, answer, question, steps);
-      if (ok) return true;
-    }
-  }
+  // Always look at the label's containing block first — we need to know
+  // whether the field is a React-Select before we decide how to fill it.
+  const container = labelEl
+    .locator("xpath=ancestor::*[self::div or self::fieldset or self::section][1]")
+    .first();
+  const containerExists = (await container.count()) > 0;
 
-  // 2. Scope to the label's containing block.
-  const container = labelEl.locator("xpath=ancestor::*[self::div or self::fieldset or self::section][1]").first();
-  if ((await container.count()) > 0) {
-    // Try various input types within the container.
-    const candidates: Array<{ loc: Locator; kind: string }> = [
-      { loc: container.locator("textarea").first(), kind: "textarea" },
-      { loc: container.locator("input[type='text'], input:not([type])").first(), kind: "text" },
-      { loc: container.locator("input[type='url'], input[type='email'], input[type='tel']").first(), kind: "text" },
-      { loc: container.locator("select").first(), kind: "select" },
-    ];
-    for (const c of candidates) {
-      if ((await c.loc.count()) === 0) continue;
-      if (!(await c.loc.isVisible().catch(() => false))) continue;
-      const ok = await fillByKind(page, c.loc, c.kind, answer, question, steps);
-      if (ok) return true;
-    }
-    // React-Select (custom div control with "Select..." placeholder)
+  // 1. React-Select FIRST. The label may have for=<hidden input id> and our
+  //    old shortcut filled that hidden input — which doesn't update the
+  //    visible dropdown. Detect and use click+type+click flow instead.
+  if (containerExists) {
     const rsControl = container
-      .locator("[class*='select__control' i], [class*='Select__control' i], [class*='control' i][role='combobox'], [role='combobox']")
+      .locator(
+        "[class*='select__control' i], [class*='Select__control' i], div[class*='control' i]:has([class*='placeholder' i]), [role='combobox']",
+      )
       .first();
     if ((await rsControl.count()) > 0 && (await rsControl.isVisible().catch(() => false))) {
       const ok = await fillReactSelect(page, rsControl, answer, question, steps);
       if (ok) return true;
     }
-    // Radio group inside container
+  }
+
+  // 2. Native <select>.
+  if (containerExists) {
+    const native = container.locator("select").first();
+    if ((await native.count()) > 0 && (await native.isVisible().catch(() => false))) {
+      const ok = await fillByKind(page, native, "select", answer, question, steps);
+      if (ok) return true;
+    }
+  }
+
+  // 3. Radio group (yes/no questions).
+  if (containerExists) {
     const radios = container.locator("input[type='radio']");
     if ((await radios.count()) > 0) {
       const ok = await fillRadioGroup(page, container, radios, answer, question, steps);
+      if (ok) return true;
+    }
+  }
+
+  // 4. Direct <label for="X"> link — for actual text inputs / textareas
+  //    only. Skip if the target is inside a React-Select control (its
+  //    visible value lives in the parent state, not in the input).
+  const forId = await labelEl.getAttribute("for").catch(() => null);
+  if (forId) {
+    const target = page.locator(`#${cssEscape(forId)}`).first();
+    if ((await target.count()) > 0) {
+      const insideRs = await target
+        .evaluate((el: Element) => {
+          let cur: Element | null = el;
+          for (let i = 0; i < 6 && cur; i++) {
+            const cls = (cur.className || "").toString();
+            if (/select__control|Select__control|select__value-container/.test(cls)) {
+              return true;
+            }
+            cur = cur.parentElement;
+          }
+          return false;
+        })
+        .catch(() => false);
+      if (!insideRs) {
+        const ok = await fillAnyInput(page, target, answer, question, steps);
+        if (ok) return true;
+      }
+    }
+  }
+
+  // 5. Bare textarea / text input inside container.
+  if (containerExists) {
+    const candidates: Array<{ loc: Locator; kind: string }> = [
+      { loc: container.locator("textarea").first(), kind: "textarea" },
+      { loc: container.locator("input[type='text'], input:not([type])").first(), kind: "text" },
+      { loc: container.locator("input[type='url'], input[type='email'], input[type='tel']").first(), kind: "text" },
+    ];
+    for (const c of candidates) {
+      if ((await c.loc.count()) === 0) continue;
+      if (!(await c.loc.isVisible().catch(() => false))) continue;
+      const ok = await fillByKind(page, c.loc, c.kind, answer, question, steps);
       if (ok) return true;
     }
   }
