@@ -185,19 +185,59 @@ export async function runSubmission(applicationId: string): Promise<SubmissionRe
         await logEvent(applicationId, s.step, { detail: s.detail, ok: s.ok });
       }
 
-      // Screenshot the filled form for the audit trail
-      const screenshot = await session.page.screenshot({ fullPage: true });
-      await logEvent(applicationId, "screenshot", {
-        size: screenshot.length,
-        note: "filled form, pre-submit",
+      // Pre-submit screenshot (audit trail; we persist it as base64 so it
+      // survives past the ephemeral Browserbase session).
+      const preShot = await session.page.screenshot({ fullPage: true, type: "jpeg", quality: 70 });
+      await logEvent(applicationId, "screenshot_pre_submit", {
+        size: preShot.length,
+        imageBase64: preShot.toString("base64"),
       });
 
-      // Final click — gated by env flag
       if (realSubmitEnabled && result.submitButton) {
+        const urlBefore = session.page.url();
         await session.page.locator(result.submitButton.selector).first().click();
-        await session.page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
-        realSubmitted = true;
-        await logEvent(applicationId, "submit_clicked", { url: session.page.url() });
+        // Wait longer than before — Anthropic's Greenhouse forms run
+        // client-side validation, then a network round-trip, then a route
+        // change. 15s covers all of that.
+        await session.page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+        await session.page.waitForTimeout(2000);
+
+        const urlAfter = session.page.url();
+        const bodyText = (await session.page
+          .locator("body")
+          .textContent()
+          .catch(() => "")) ?? "";
+
+        const postShot = await session.page.screenshot({ fullPage: true, type: "jpeg", quality: 70 });
+
+        const navigated = urlAfter !== urlBefore;
+        const looksLikeThankYou = /thank you|your application|application.{0,20}(submitted|received)|we'?ll be in touch/i.test(
+          bodyText.slice(0, 4000),
+        );
+        const looksLikeValidationError = /required|please (enter|select|provide|fill)|missing|cannot be (empty|blank)/i.test(
+          bodyText.slice(0, 4000),
+        );
+        const submitSucceeded = navigated || looksLikeThankYou;
+        realSubmitted = submitSucceeded;
+
+        await logEvent(
+          applicationId,
+          submitSucceeded ? "submit_succeeded" : "submit_failed_validation",
+          {
+            urlBefore,
+            urlAfter,
+            navigated,
+            looksLikeThankYou,
+            looksLikeValidationError,
+            bodyPreview: bodyText.replace(/\s+/g, " ").slice(0, 600),
+          },
+        );
+
+        await logEvent(applicationId, "screenshot_post_submit", {
+          size: postShot.length,
+          imageBase64: postShot.toString("base64"),
+          succeeded: submitSucceeded,
+        });
       } else {
         await logEvent(applicationId, "demo_skipped_submit", {
           reason: realSubmitEnabled
