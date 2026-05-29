@@ -10,15 +10,25 @@ export async function GET(req: Request) {
     return NextResponse.redirect(new URL("/sign-in", req.url));
   }
 
-  const client = oauthClient(req);
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return NextResponse.redirect(
+      new URL("/onboarding?gmail_error=google_oauth_not_configured", req.url),
+    );
+  }
 
-  const url = client.generateAuthUrl({
-    access_type: "offline", // get a refresh token
-    prompt: "consent", // force refresh-token issuance even on re-auth
-    scope: GMAIL_SCOPES,
-    // Pass the Clerk userId through state so we can tie the callback to the right user.
-    state: user.clerkId,
-  });
-
-  return NextResponse.redirect(url);
+  try {
+    const client = oauthClient(req);
+    const url = client.generateAuthUrl({
+      access_type: "offline",
+      prompt: "consent",
+      scope: GMAIL_SCOPES,
+      state: user.clerkId,
+    });
+    return NextResponse.redirect(url);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "oauth_init_failed";
+    return NextResponse.redirect(
+      new URL(`/onboarding?gmail_error=${encodeURIComponent(msg)}`, req.url),
+    );
+  }
 }
