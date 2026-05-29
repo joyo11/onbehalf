@@ -48,7 +48,7 @@ export default async function MatchesScreen({
     <div className="px-10 py-9 max-w-[1100px] mx-auto">
       <div className="flex items-start justify-between">
         <div>
-          <SectionLabel>Run #{Math.floor(Math.random() * 999) + 100} · just now</SectionLabel>
+          <SectionLabel>Search results</SectionLabel>
           <h1 className="mt-2 text-[30px] font-semibold tracking-[-0.022em]">
             I found {jobs.length} match{jobs.length === 1 ? "" : "es"}.{" "}
             {strong > 0 && (

@@ -44,21 +44,78 @@ function formatPosted(d: Date | null): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/**
+ * Strip HTML tags, decode the most common entities, and collapse whitespace.
+ * Greenhouse stores JDs as raw HTML — we want clean prose to show users.
+ */
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|h[1-6]|li|div)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&rsquo;/g, "'")
+    .replace(/&lsquo;/g, "'")
+    .replace(/&ldquo;/g, '"')
+    .replace(/&rdquo;/g, '"')
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{2,}/g, "\n\n");
+}
+
+/**
+ * Greenhouse JDs almost always start with "About <Company>" boilerplate. For
+ * the matches list, every same-company card would look identical. Skip past
+ * the company intro to the role-specific content where possible.
+ */
+function skipCompanyIntro(text: string): string {
+  // Try section headers that mark the role-specific content.
+  const markers = [
+    /\bAbout the role\b/i,
+    /\bThe role\b/i,
+    /\bWhat you'?ll do\b/i,
+    /\bWhat you will do\b/i,
+    /\bResponsibilities\b/i,
+    /\bIn this role\b/i,
+    /\bYour role\b/i,
+  ];
+  for (const m of markers) {
+    const hit = text.search(m);
+    if (hit > 50) return text.slice(hit).trim();
+  }
+  // No marker found — fall back to skipping the first paragraph if it's
+  // recognisably an "About <Company>" intro.
+  const firstBreak = text.indexOf("\n\n");
+  if (firstBreak > 0 && /^about\b/i.test(text)) {
+    return text.slice(firstBreak).trim();
+  }
+  return text;
+}
+
 function extractSummary(jdText: string): string {
-  const cleaned = jdText.replace(/\s+/g, " ").trim();
+  const plain = stripHtml(jdText);
+  const focused = skipCompanyIntro(plain);
+  const cleaned = focused.replace(/\s+/g, " ").trim();
   return cleaned.slice(0, 220).trim() + (cleaned.length > 220 ? "…" : "");
 }
 
 function extractBullets(jdText: string): string[] {
-  const lines = jdText
+  const plain = stripHtml(jdText);
+  const focused = skipCompanyIntro(plain);
+  const lines = focused
     .split(/\n+/)
     .map((l) => l.trim())
     .filter(Boolean);
   // Prefer bullet-prefixed lines
   const bulletLines = lines.filter((l) => l.startsWith("•")).map((l) => l.replace(/^•\s*/, ""));
   if (bulletLines.length >= 3) return bulletLines.slice(0, 8);
-  // Fall back to all lines, skip section headers
-  return lines.filter((l) => l.length > 30 && l.length < 400).slice(0, 6);
+  // Fall back to substantive lines, skip section headers and stub fragments
+  return lines.filter((l) => l.length > 40 && l.length < 400).slice(0, 6);
 }
 
 /**
