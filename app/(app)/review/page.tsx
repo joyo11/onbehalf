@@ -110,12 +110,14 @@ function ReviewInner() {
           screeners: data.screeners.answers,
         }),
       });
+      const json = await res.json();
       if (!res.ok) {
-        const j = await res.json();
-        setError(j.error ?? `Failed (${res.status})`);
+        setError(json.error ?? `Failed (${res.status})`);
         return;
       }
-      router.push("/tracker");
+      // Redirect to /detail where the user watches Playwright fill the form live.
+      // /detail kicks off /api/submit on mount and polls the application's events.
+      router.push(`/detail?id=${encodeURIComponent(json.applicationId)}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error");
     }

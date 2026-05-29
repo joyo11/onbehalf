@@ -1,280 +1,292 @@
 "use client";
 
-/*  Application detail — timeline + Gmail preview + sidebar. */
-
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, SectionLabel } from "@/components/ui/card";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { Monogram } from "@/components/ui/monogram";
 import { StatusPill } from "@/components/ui/status-pill";
-import { DETAIL_TIMELINE, REVIEW_JOB } from "@/lib/data";
-import type { TimelineStage } from "@/lib/types";
+import type { Status } from "@/lib/types";
+
+type EventRow = {
+  id: string;
+  step: string;
+  payload: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+type DetailPayload = {
+  application: {
+    id: string;
+    status: Status;
+    matchScore: number;
+    tailoringSummary: string;
+    coverLetterText: string | null;
+    submittedAt: string | null;
+    failureReason: string | null;
+  };
+  job: {
+    id: string;
+    company: string;
+    title: string;
+    location: string | null;
+    applyUrl: string;
+  };
+  events: EventRow[];
+};
 
 export default function DetailScreen() {
   return (
-    <div className="px-10 py-9 max-w-[1280px] mx-auto">
-      <DetailHeader />
+    <Suspense fallback={<DetailSkeleton />}>
+      <DetailInner />
+    </Suspense>
+  );
+}
+
+function DetailInner() {
+  const sp = useSearchParams();
+  const id = sp.get("id");
+  const [data, setData] = useState<DetailPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const submitFiredRef = useRef(false);
+
+  useEffect(() => {
+    if (!id) {
+      setError("No application selected.");
+      return;
+    }
+
+    if (!submitFiredRef.current) {
+      submitFiredRef.current = true;
+      fetch("/api/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ applicationId: id }),
+      }).catch(() => {});
+    }
+
+    let cancelled = false;
+    async function tick() {
+      try {
+        const res = await fetch(`/api/applications/${encodeURIComponent(id!)}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          if (res.status === 404) setError("Application not found.");
+          return;
+        }
+        const json = (await res.json()) as DetailPayload;
+        if (!cancelled) setData(json);
+      } catch {
+        // network blip — try again next tick
+      }
+    }
+    void tick();
+    const handle = setInterval(tick, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(handle);
+    };
+  }, [id]);
+
+  if (error) {
+    return (
+      <div className="px-10 py-16 max-w-[760px] mx-auto">
+        <Card className="p-8 text-center">
+          <Icon name="alert-circle" size={22} className="text-error mx-auto" />
+          <h2 className="text-[17px] font-semibold mt-3">{error}</h2>
+          <div className="mt-5">
+            <Link href="/tracker">
+              <Button variant="secondary">Back to tracker</Button>
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!data) return <DetailSkeleton />;
+
+  const liveViewUrl = (
+    data.events.find((e) => e.step === "session_started")?.payload as
+      | { liveViewUrl?: string }
+      | null
+      | undefined
+  )?.liveViewUrl;
+  const terminal = ["submitted", "failed", "needsHuman", "confirmed"].includes(data.application.status);
+
+  return (
+    <div className="px-10 py-9 max-w-[1100px] mx-auto">
+      <Header app={data.application} job={data.job} />
       <div className="mt-7 grid grid-cols-12 gap-6">
-        <div className="col-span-8 space-y-6">
-          <DetailTimeline />
-          <DetailEmail />
+        <div className="col-span-7">
+          <SectionLabel className="mb-3">Live progress</SectionLabel>
+          <Card className="p-5">
+            <ol className="space-y-3">
+              {data.events.length === 0 ? (
+                <li className="text-[13px] text-mute">Waiting for the agent to start…</li>
+              ) : (
+                data.events.map((e) => <Event key={e.id} e={e} />)
+              )}
+              {!terminal && (
+                <li className="text-[12.5px] text-mute flex items-center gap-2 mt-2">
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{
+                      background: "var(--accent)",
+                      animation: "pulse-dot 1.6s ease-in-out infinite",
+                    }}
+                  />
+                  Agent is working…
+                </li>
+              )}
+            </ol>
+          </Card>
         </div>
-        <div className="col-span-4 space-y-4">
-          <DetailSidebar />
-          <DetailFiles />
+        <div className="col-span-5">
+          <SectionLabel className="mb-3">Watch live</SectionLabel>
+          <Card className="p-5">
+            {liveViewUrl ? (
+              <>
+                <p className="text-[13px] text-ink/85 lh-body">
+                  Open the Browserbase live view to watch the agent fill the form in real time.
+                </p>
+                <a
+                  href={liveViewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-flex items-center gap-2 h-9 px-3.5 text-[13px] rounded-ctrl border border-line bg-white hover:border-ink/30 transition-colors"
+                >
+                  <Icon name="external-link" size={13} /> Open live view
+                </a>
+              </>
+            ) : (
+              <p className="text-[13px] text-mute lh-body">
+                Live view URL will appear when the Browserbase session starts.
+              </p>
+            )}
+            <div className="mt-6 pt-4 border-t border-line text-[12.5px] text-mute lh-body flex items-start gap-1.5">
+              <Icon name="shield" size={13} className="mt-0.5 shrink-0" />
+              <span>
+                Demo mode: the agent fills the form, screenshots it, and stops. It does NOT click
+                Submit until you flip <code className="text-ink">REAL_SUBMIT_ENABLED=true</code>.
+              </span>
+            </div>
+          </Card>
+
+          <SectionLabel className="mb-3 mt-7">Tailoring summary</SectionLabel>
+          <Card className="p-5 text-[13.5px] lh-body text-ink/85">
+            {data.application.tailoringSummary || "—"}
+          </Card>
+        </div>
+      </div>
+
+      <div className="mt-10 flex items-center justify-between">
+        <Link href="/tracker">
+          <Button
+            variant="ghost"
+            leading={<Icon name="chevron-right" size={13} className="rotate-180" />}
+          >
+            Back to tracker
+          </Button>
+        </Link>
+        <a href={data.job.applyUrl} target="_blank" rel="noreferrer">
+          <Button variant="secondary" leading={<Icon name="external-link" size={13} />}>
+            View original posting
+          </Button>
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function Header({ app, job }: { app: DetailPayload["application"]; job: DetailPayload["job"] }) {
+  return (
+    <div className="flex items-start gap-5">
+      <Monogram name={job.company} size={56} />
+      <div className="flex-1">
+        <div className="flex items-center gap-2">
+          <h1 className="text-[24px] font-semibold tracking-[-0.018em]">{job.title}</h1>
+          <StatusPill status={app.status} />
+        </div>
+        <div className="text-[13.5px] text-mute mt-1">
+          {job.company} {job.location ? `· ${job.location}` : ""}
         </div>
       </div>
     </div>
   );
 }
 
-function DetailHeader() {
-  const job = REVIEW_JOB;
+function DetailSkeleton() {
   return (
-    <div className="flex items-center gap-5">
-      <button className="text-mute hover:text-ink flex items-center gap-1.5 text-[12.5px]">
-        <Icon name="chevron-right" size={12} className="rotate-180" /> Dashboard
-      </button>
-      <span className="text-[#D6D3CC]">/</span>
-      <Monogram name={job.company} size={42} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2.5">
-          <h1 className="text-[20px] font-semibold tracking-[-0.018em]">{job.role}</h1>
-          <StatusPill status="confirmed" />
-        </div>
-        <div className="text-[12.5px] text-mute mt-0.5">
-          {job.company} <span className="text-[#D6D3CC] mx-1">·</span> {job.location}{" "}
-          <span className="text-[#D6D3CC] mx-1">·</span> {job.salary}{" "}
-          <span className="text-[#D6D3CC] mx-1">·</span> Application #LIN-2148
+    <div className="px-10 py-9 max-w-[1100px] mx-auto">
+      <div className="flex items-center gap-5">
+        <div className="shimmer w-14 h-14 rounded-md" />
+        <div className="flex-1">
+          <div className="shimmer h-6 w-1/2 rounded" />
+          <div className="shimmer h-3 w-1/3 mt-2 rounded" />
         </div>
       </div>
-      <Button variant="secondary" leading={<Icon name="external" size={13} />}>
-        View on Greenhouse
-      </Button>
-      <Button variant="ghost">
-        <Icon name="menu-dots" size={16} />
-      </Button>
+      <Card className="mt-6 p-5 space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="shimmer h-3 w-full rounded" />
+        ))}
+      </Card>
     </div>
   );
 }
 
-function DetailTimeline() {
-  return (
-    <Card className="overflow-hidden">
-      <div className="px-5 py-4 border-b border-line">
-        <h3 className="text-[14px] font-semibold">Timeline</h3>
-        <div className="text-[12px] text-mute mt-0.5">
-          5 minutes start-to-finish. Submitted at 8:16 AM, confirmed at 8:18 AM.
-        </div>
-      </div>
-      <div className="px-5 py-5">
-        <ol className="relative">
-          <div className="absolute left-[15px] top-3 bottom-3 w-px bg-line" />
-          {DETAIL_TIMELINE.map((step, i) => (
-            <TimelineStep key={i} step={step} isLast={i === DETAIL_TIMELINE.length - 1} />
-          ))}
-        </ol>
-      </div>
-    </Card>
-  );
-}
+const STEP_LABELS: Record<string, { label: string; icon: IconName }> = {
+  submission_started: { label: "Submission started", icon: "play" },
+  session_started: { label: "Browserbase session live", icon: "globe" },
+  page_loaded: { label: "Apply page loaded", icon: "external-link" },
+  ats_detected: { label: "ATS detected", icon: "check-circle" },
+  uploaded_resume: { label: "Resume uploaded", icon: "upload" },
+  screenshot: { label: "Screenshot taken", icon: "eye" },
+  demo_skipped_submit: { label: "Demo mode — Submit skipped", icon: "shield" },
+  submit_clicked: { label: "Submit button clicked", icon: "paper-plane" },
+  error: { label: "Error", icon: "alert-circle" },
+  ats_unsupported: { label: "ATS not yet supported", icon: "alert-circle" },
+};
 
-function TimelineStep({ step }: { step: TimelineStage; isLast: boolean }) {
+function Event({ e }: { e: EventRow }) {
+  const meta = STEP_LABELS[e.step];
+  const label =
+    meta?.label ??
+    (e.step.startsWith("filled_") ? `Filled: ${e.step.replace("filled_", "")}` : e.step);
+  const icon: IconName = meta?.icon ?? "check";
+  const detail =
+    e.payload && typeof e.payload === "object"
+      ? (e.payload as Record<string, unknown>).detail
+      : null;
+  const isError = e.step === "error" || e.step.startsWith("failed_");
+  const t = new Date(e.createdAt);
+
   return (
-    <li className="relative pl-12 pb-6 last:pb-0">
-      <span
-        className="absolute left-0 top-0.5 w-[31px] h-[31px] rounded-full flex items-center justify-center"
-        style={{ background: "var(--accent-soft)", color: "var(--accent-hi)" }}
+    <li className="flex items-start gap-3">
+      <div
+        className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+        style={
+          isError
+            ? { background: "#FBE9E9", color: "#9C2222" }
+            : { background: "var(--accent-soft)", color: "var(--accent-hi)" }
+        }
       >
-        <Icon name={step.icon as IconName} size={14} />
-      </span>
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-[14px] font-medium">{step.label}</div>
-        <div className="text-[12px] text-mute tabular-nums shrink-0">{step.time}</div>
+        <Icon name={icon} size={12} />
       </div>
-      <div className="text-[13px] text-mute mt-1 lh-body">{step.desc}</div>
-
-      {step.stage === "submitting" && (
-        <div className="mt-3">
-          <ScreenshotThumb caption="Greenhouse application form — page 2 of 2" />
-        </div>
-      )}
-      {step.stage === "submitted" && (
-        <div className="mt-3">
-          <ScreenshotThumb caption="Submission confirmation page" />
-        </div>
-      )}
+      <div className="flex-1 min-w-0">
+        <div className="text-[13.5px] text-ink">{label}</div>
+        {detail !== null && detail !== undefined && (
+          <div className="text-[12px] text-mute lh-body truncate" title={String(detail)}>
+            {String(detail)}
+          </div>
+        )}
+      </div>
+      <div className="text-[11px] tabular text-ink-faint shrink-0">
+        {t.toLocaleTimeString("en-US", { hour12: false })}
+      </div>
     </li>
   );
-}
-
-function ScreenshotThumb({ caption }: { caption: string }) {
-  return (
-    <div className="inline-block rounded-md border border-line bg-white overflow-hidden">
-      <div className="w-[320px] h-[170px] relative" style={{ background: "#F8F7F2" }}>
-        {/* Stylized fake screenshot */}
-        <div className="absolute inset-0 p-4 flex flex-col gap-2">
-          <div className="h-3 w-1/3 rounded-sm bg-[#E7E5E0]" />
-          <div className="h-2 w-2/3 rounded-sm bg-[#EFEDE7]" />
-          <div className="flex gap-2 mt-2">
-            <div className="h-7 w-24 rounded-sm bg-[#EFEDE7]" />
-            <div className="h-7 w-24 rounded-sm bg-[#EFEDE7]" />
-          </div>
-          <div className="h-2 w-full rounded-sm bg-[#EFEDE7] mt-2" />
-          <div className="h-2 w-4/5 rounded-sm bg-[#EFEDE7]" />
-          <div className="h-2 w-2/3 rounded-sm bg-[#EFEDE7]" />
-          <div className="mt-auto flex justify-end">
-            <div className="h-7 w-28 rounded-sm" style={{ background: "var(--accent)" }} />
-          </div>
-        </div>
-        <button className="absolute top-2 right-2 w-7 h-7 rounded-sm bg-white/80 backdrop-blur flex items-center justify-center text-mute hover:text-ink">
-          <Icon name="eye" size={13} />
-        </button>
-      </div>
-      <div className="px-3 py-2 text-[11.5px] text-mute border-t border-line">{caption}</div>
-    </div>
-  );
-}
-
-function DetailEmail() {
-  return (
-    <Card className="overflow-hidden">
-      <div className="px-5 py-4 border-b border-line flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Icon name="mail" size={14} style={{ color: "var(--accent-hi)" }} />
-          <h3 className="text-[14px] font-semibold">Confirmation email · Gmail</h3>
-        </div>
-        <span className="text-[11.5px] text-mute">Auto-tagged &ldquo;Onbehalf / Linear&rdquo;</span>
-      </div>
-      <div className="p-6">
-        <div className="flex items-center justify-between text-[12.5px] mb-4">
-          <div>
-            <div className="font-medium">
-              Linear Recruiting <span className="text-mute font-normal">&lt;jobs@linear.app&gt;</span>
-            </div>
-            <div className="text-mute">to maya.chen@gmail.com</div>
-          </div>
-          <div className="text-mute tabular-nums">May 27, 2026 · 8:18 AM</div>
-        </div>
-        <div className="text-[14.5px] font-semibold mb-3">
-          We received your application — Senior Product Engineer, Workflows
-        </div>
-        <div className="text-[13.5px] lh-body space-y-3 text-ink/90">
-          <p>Hi Maya,</p>
-          <p>
-            Thanks for applying to the Senior Product Engineer, Workflows role at Linear. We&apos;ve received your
-            application and our team will review it carefully.
-          </p>
-          <p>
-            You can expect to hear back from us within 5 business days. If we&apos;d like to move forward, we&apos;ll send you
-            a short take-home and a 30-minute intro call with a member of the workflows team.
-          </p>
-          <p>In the meantime, a few things you might find useful:</p>
-          <ul className="ml-5 list-disc space-y-1">
-            <li>
-              How we work —{" "}
-              <a href="#" style={{ color: "var(--accent-hi)" }} className="underline underline-offset-2">
-                linear.app/method
-              </a>
-            </li>
-            <li>
-              Engineering blog —{" "}
-              <a href="#" style={{ color: "var(--accent-hi)" }} className="underline underline-offset-2">
-                linear.app/blog
-              </a>
-            </li>
-          </ul>
-          <p>
-            Thanks again,
-            <br />
-            The Linear team
-          </p>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function DetailSidebar() {
-  return (
-    <Card className="p-5">
-      <SectionLabel>Application</SectionLabel>
-      <dl className="mt-4 space-y-3.5 text-[13px]">
-        <Meta k="Submitted via" v="Greenhouse (direct API)" />
-        <Meta k="Application ID" v="LIN-2148" mono />
-        <Meta k="Recruiter" v="Sara Park" link />
-        <Meta k="Posted" v="May 25, 2026" />
-        <Meta k="Closes" v="June 22, 2026" />
-        <Meta k="Match score" v="92 / 100" />
-        <Meta k="Estimated cost" v="$0.32" />
-      </dl>
-
-      <div className="mt-5 pt-4 border-t border-line">
-        <SectionLabel>Company</SectionLabel>
-        <div className="mt-3 flex items-start gap-3">
-          <Monogram name="Linear" size={36} />
-          <div>
-            <div className="text-[13.5px] font-medium">Linear</div>
-            <div className="text-[12px] text-mute lh-body mt-0.5">
-              Issue tracking for high-performing software teams. ~150 people, Series C.
-            </div>
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function Meta({ k, v, link, mono }: { k: string; v: string; link?: boolean; mono?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <dt className="text-mute">{k}</dt>
-      <dd
-        className={`text-ink font-medium text-right ${mono ? "font-mono text-[12px]" : ""} ${
-          link ? "underline underline-offset-2 cursor-pointer hover:text-[var(--accent-hi)]" : ""
-        }`}
-      >
-        {v}
-      </dd>
-    </div>
-  );
-}
-
-function DetailFiles() {
-  const files = [
-    { n: "maya_chen_resume_linear.pdf", s: "148 KB", tag: "Tailored" },
-    { n: "cover_letter_linear.pdf", s: "52 KB", tag: "Tailored" },
-    { n: "portfolio_2026.pdf", s: "2.1 MB", tag: "Master" },
-  ];
-  return (
-    <Card className="p-5">
-      <SectionLabel>Files sent</SectionLabel>
-      <div className="mt-3 space-y-2">
-        {files.map((f) => (
-          <button
-            key={f.n}
-            className="w-full flex items-center gap-3 p-2.5 rounded-sm hover:bg-[#FBFAF7] text-left"
-          >
-            <div
-              className="w-9 h-10 rounded-sm bg-[#FBE9E9] flex items-center justify-center"
-              style={{ color: "#9C2222" }}
-            >
-              <Icon name="file" size={14} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[12.5px] font-medium truncate">{f.n}</div>
-              <div className="text-[11px] text-mute mt-0.5">
-                {f.s} <Dot /> {f.tag}
-              </div>
-            </div>
-            <Icon name="download" size={14} className="text-mute" />
-          </button>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
-function Dot() {
-  return <span className="text-[#D6D3CC] mx-1">·</span>;
 }
