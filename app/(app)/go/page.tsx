@@ -17,9 +17,41 @@ export default async function GoPage() {
     );
   }
 
+  // Explicitly select fields we use — DO NOT pull resume_pdf (bytea) into
+  // a render path; it can't serialize to a Client Component as a prop.
   const [profileRow, sections] = await Promise.all([
-    db.select().from(profile).where(eq(profile.userId, user.id)).limit(1).then((r) => r[0]),
-    db.select().from(resumeSection).where(eq(resumeSection.userId, user.id)),
+    db
+      .select({
+        fullName: profile.fullName,
+        phone: profile.phone,
+        location: profile.location,
+        linkedinUrl: profile.linkedinUrl,
+        githubUrl: profile.githubUrl,
+        portfolioUrl: profile.portfolioUrl,
+        targetRoleTitles: profile.targetRoleTitles,
+        desiredSalaryMin: profile.desiredSalaryMin,
+        preferredLocations: profile.preferredLocations,
+        workAuthorization: profile.workAuthorization,
+        openToRemote: profile.openToRemote,
+        openToHybrid: profile.openToHybrid,
+        openToOnsite: profile.openToOnsite,
+        voiceSample: profile.voiceSample,
+        skillYears: profile.skillYears,
+        resumeFileName: profile.resumeFileName,
+      })
+      .from(profile)
+      .where(eq(profile.userId, user.id))
+      .limit(1)
+      .then((r) => r[0]),
+    db
+      .select({
+        id: resumeSection.id,
+        type: resumeSection.type,
+        title: resumeSection.title,
+        organization: resumeSection.organization,
+      })
+      .from(resumeSection)
+      .where(eq(resumeSection.userId, user.id)),
   ]);
 
   if (!profileRow || sections.length === 0) {

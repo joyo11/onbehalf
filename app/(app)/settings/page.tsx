@@ -19,7 +19,11 @@ export default async function SettingsPage() {
       year: "numeric",
     });
 
-    const [p] = await db.select().from(profile).where(eq(profile.userId, user.id)).limit(1);
+    const [p] = await db
+      .select({ fullName: profile.fullName })
+      .from(profile)
+      .where(eq(profile.userId, user.id))
+      .limit(1);
     name = p?.fullName ?? email.split("@")[0];
   }
 
