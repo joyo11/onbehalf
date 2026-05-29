@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -24,21 +24,18 @@ export default async function DashboardScreen() {
 
   const weekAgo = new Date(Date.now() - 7 * 86400_000);
 
-  const [statsRow, recent, gmailRow] = await Promise.all([
-    // Aggregate counts
+  // Pull just the fields we need to compute stats in JS — the Supabase
+  // transaction pooler chokes on `count(*) FILTER (WHERE ...)` aggregates,
+  // so we avoid them entirely. For small per-user app counts this is
+  // negligible.
+  const [allApps, recent, gmailRow] = await Promise.all([
     db
       .select({
-        sentThisWeek: sql<number>`count(*) filter (where ${application.submittedAt} >= ${weekAgo})::int`,
-        sentAllTime: sql<number>`count(*) filter (where ${application.submittedAt} is not null)::int`,
-        confirmed: sql<number>`count(*) filter (where ${application.status} = 'confirmed')::int`,
-        pending: sql<number>`count(*) filter (where ${application.status} = 'pending')::int`,
-        needsHuman: sql<number>`count(*) filter (where ${application.status} = 'needsHuman')::int`,
-        failed: sql<number>`count(*) filter (where ${application.status} = 'failed')::int`,
+        status: application.status,
+        submittedAt: application.submittedAt,
       })
       .from(application)
-      .where(eq(application.userId, user.id))
-      .then((rs) => rs[0]),
-    // Last 5 applications joined with job
+      .where(eq(application.userId, user.id)),
     db
       .select({
         appId: application.id,
@@ -53,17 +50,23 @@ export default async function DashboardScreen() {
       .where(eq(application.userId, user.id))
       .orderBy(desc(application.submittedAt))
       .limit(5),
-    // Gmail connection status
-    db.select().from(userTable).where(eq(userTable.id, user.id)).limit(1).then((rs) => rs[0]),
+    db
+      .select({
+        gmailConnectedAt: userTable.gmailConnectedAt,
+      })
+      .from(userTable)
+      .where(eq(userTable.id, user.id))
+      .limit(1)
+      .then((rs) => rs[0]),
   ]);
 
-  const stats = statsRow ?? {
-    sentThisWeek: 0,
-    sentAllTime: 0,
-    confirmed: 0,
-    pending: 0,
-    needsHuman: 0,
-    failed: 0,
+  const stats = {
+    sentThisWeek: allApps.filter((a) => a.submittedAt && a.submittedAt >= weekAgo).length,
+    sentAllTime: allApps.filter((a) => a.submittedAt).length,
+    confirmed: allApps.filter((a) => a.status === "confirmed").length,
+    pending: allApps.filter((a) => a.status === "pending").length,
+    needsHuman: allApps.filter((a) => a.status === "needsHuman").length,
+    failed: allApps.filter((a) => a.status === "failed").length,
   };
 
   const confirmationRate =
