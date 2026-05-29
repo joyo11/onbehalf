@@ -1,5 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { db } from "@/lib/db/client";
 import { application } from "@/lib/db/schema";
 import { runSubmission } from "@/lib/submit/orchestrate";
@@ -59,14 +59,18 @@ export async function POST(req: Request) {
 
   if (remaining.length > 0) {
     const origin = new URL(req.url).origin;
-    void fetch(`${origin}/api/process-queue`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: req.headers.get("authorization") ?? "",
-      },
-      body: JSON.stringify(body),
-    }).catch(() => {});
+    const auth = req.headers.get("authorization") ?? "";
+    after(async () => {
+      try {
+        await fetch(`${origin}/api/process-queue`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: auth },
+          body: JSON.stringify(body),
+        });
+      } catch (e) {
+        console.error("process-queue self-trigger failed:", e);
+      }
+    });
   }
 
   return NextResponse.json({

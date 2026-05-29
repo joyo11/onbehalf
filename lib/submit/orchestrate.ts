@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db/client";
-import { application, applicationEvent, job, profile } from "../db/schema";
+import { application, applicationEvent, job, profile, user as userTable } from "../db/schema";
 import { tailorForJob } from "../tailor";
 import { startSession } from "./browserbase";
 import { fillGreenhouseForm, isGreenhousePage } from "./greenhouse";
@@ -72,11 +72,15 @@ export async function runSubmission(applicationId: string): Promise<SubmissionRe
       .where(eq(application.id, applicationId));
     await logEvent(applicationId, "tailoring_started", {});
     try {
-      // tailorForJob returns Claude-generated tailoring + cover + screeners.
-      const tail = await tailorForJob(
-        { id: row.app.userId, clerkId: "", email: "", gmailConnectedAt: null, gmailRefreshToken: null, stripeCustomerId: null, plan: "free", applicationsThisMonth: 0, createdAt: new Date() },
-        row.jobRow.id,
-      );
+      // Pull the real user row so tailorForJob has a proper email for the
+      // cover letter header.
+      const [realUser] = await db
+        .select()
+        .from(userTable)
+        .where(eq(userTable.id, row.app.userId))
+        .limit(1);
+      if (!realUser) throw new Error("User not found for tailoring");
+      const tail = await tailorForJob(realUser, row.jobRow.id);
       coverLetterText = tail.coverLetter.cover_letter;
       tailoringSummary = tail.tailoring.summary;
       screeners = tail.screeners.answers;

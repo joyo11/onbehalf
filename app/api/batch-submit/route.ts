@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { application } from "@/lib/db/schema";
@@ -51,16 +51,21 @@ export async function POST(req: Request) {
     .onConflictDoNothing({ target: [application.userId, application.jobId] })
     .returning({ id: application.id });
 
-  // Kick off the queue processor in the background. We don't await it.
+  // Kick off the queue processor in the background. after() guarantees the
+  // fetch runs even after we've returned the response to the client.
   const origin = new URL(req.url).origin;
-  void fetch(`${origin}/api/process-queue`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.CRON_SECRET ?? process.env.SCRAPE_TOKEN ?? ""}`,
-    },
-    body: JSON.stringify({ userId: user.id }),
-  }).catch(() => {});
+  const auth = `Bearer ${process.env.CRON_SECRET ?? process.env.SCRAPE_TOKEN ?? ""}`;
+  after(async () => {
+    try {
+      await fetch(`${origin}/api/process-queue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: auth },
+        body: JSON.stringify({ userId: user.id }),
+      });
+    } catch (e) {
+      console.error("process-queue kickoff failed:", e);
+    }
+  });
 
   return NextResponse.json({
     queued: inserted.length,
