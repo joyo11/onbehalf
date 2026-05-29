@@ -116,8 +116,14 @@ function splitName(full: string | null): { first: string; last: string } {
   return { first: parts[0], last: parts.slice(1).join(" ") };
 }
 
-export async function runSubmission(applicationId: string): Promise<SubmissionResult> {
-  const realSubmitEnabled = process.env.REAL_SUBMIT_ENABLED === "true";
+export async function runSubmission(
+  applicationId: string,
+  opts: { dryRun?: boolean } = {},
+): Promise<SubmissionResult> {
+  // Dry-run forces the submit click off regardless of REAL_SUBMIT_ENABLED.
+  // Used to verify form-fill correctness end-to-end without filing a real
+  // application at the company.
+  const realSubmitEnabled = !opts.dryRun && process.env.REAL_SUBMIT_ENABLED === "true";
 
   // Atomically claim this application. If another worker already moved it
   // past 'queued' (e.g. user double-clicked Approve & submit and two

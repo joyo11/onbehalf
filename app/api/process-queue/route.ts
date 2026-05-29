@@ -22,7 +22,7 @@ function authorized(req: Request): boolean {
   return false;
 }
 
-type Body = { userId?: string };
+type Body = { userId?: string; dryRun?: boolean };
 
 export async function POST(req: Request) {
   try {
@@ -60,9 +60,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ done: true, message: "No queued applications." });
     }
 
-    console.log("[process-queue] running submission", next.id);
+    console.log("[process-queue] running submission", next.id, { dryRun: !!body.dryRun });
     const { runSubmission } = await import("@/lib/submit/orchestrate");
-    const result = await runSubmission(next.id);
+    const result = await runSubmission(next.id, { dryRun: !!body.dryRun });
     console.log("[process-queue] submission result", { id: next.id, ok: result.ok, ats: result.ats });
 
     // If more queued, re-trigger self.
