@@ -1,7 +1,8 @@
 "use client";
 
+import { UserButton, useUser } from "@clerk/nextjs";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, SectionLabel } from "@/components/ui/card";
 import { Icon, type IconName } from "@/components/ui/icon";
@@ -24,6 +25,18 @@ export default function LandingScreen() {
   );
 }
 
+function SignedIn({ children }: { children: ReactNode }) {
+  const { isLoaded, isSignedIn } = useUser();
+  if (!isLoaded || !isSignedIn) return null;
+  return <>{children}</>;
+}
+
+function SignedOut({ children }: { children: ReactNode }) {
+  const { isLoaded, isSignedIn } = useUser();
+  if (!isLoaded || isSignedIn) return null;
+  return <>{children}</>;
+}
+
 /* ---------- Top nav (marketing) ---------- */
 function LandingNav() {
   return (
@@ -33,12 +46,22 @@ function LandingNav() {
         <div className="flex items-center gap-8 text-sm text-mute">
           <a href="#how" className="hover:text-ink">How it works</a>
           <a href="#pricing" className="hover:text-ink">Pricing</a>
-          <Link href="/sign-in" className="hover:text-ink">Sign in</Link>
-          <Link href="/sign-up">
-            <Button variant="primary" size="sm" trailing={<Icon name="arrow-right" size={14} />}>
-              Get started
-            </Button>
-          </Link>
+          <SignedOut>
+            <Link href="/sign-in" className="hover:text-ink">Sign in</Link>
+            <Link href="/sign-up">
+              <Button variant="primary" size="sm" trailing={<Icon name="arrow-right" size={14} />}>
+                Get started
+              </Button>
+            </Link>
+          </SignedOut>
+          <SignedIn>
+            <Link href="/dashboard">
+              <Button variant="primary" size="sm" trailing={<Icon name="arrow-right" size={14} />}>
+                Open dashboard
+              </Button>
+            </Link>
+            <UserButton />
+          </SignedIn>
         </div>
       </div>
     </nav>
@@ -66,11 +89,20 @@ function LandingHero() {
             Onbehalf tailors every submission and only forwards the ones worth your time.
           </p>
           <div className="mt-8 flex items-center gap-3">
-            <Link href="/sign-up">
-              <Button size="lg" variant="primary" trailing={<Icon name="arrow-right" size={15} />}>
-                Get started — it&apos;s free
-              </Button>
-            </Link>
+            <SignedOut>
+              <Link href="/sign-up">
+                <Button size="lg" variant="primary" trailing={<Icon name="arrow-right" size={15} />}>
+                  Get started — it&apos;s free
+                </Button>
+              </Link>
+            </SignedOut>
+            <SignedIn>
+              <Link href="/dashboard">
+                <Button size="lg" variant="primary" trailing={<Icon name="arrow-right" size={15} />}>
+                  Open your dashboard
+                </Button>
+              </Link>
+            </SignedIn>
             <Button variant="secondary" size="lg" leading={<Icon name="play" size={14} />}>
               Watch 90-second demo
             </Button>
