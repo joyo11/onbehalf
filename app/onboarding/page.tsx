@@ -2,8 +2,8 @@
 
 /*  Onboarding — 7 steps, sticky progress bar. */
 
-import { useRouter } from "next/navigation";
-import { useRef, useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, SectionLabel } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
@@ -109,6 +109,14 @@ const EMPTY_ABOUT: AboutForm = {
 };
 
 export default function OnboardingScreen() {
+  return (
+    <Suspense fallback={null}>
+      <OnboardingInner />
+    </Suspense>
+  );
+}
+
+function OnboardingInner() {
   const router = useRouter();
   const [step, setStep] = useState<number>(1);
   const [parsed, setParsed] = useState<ParsedResume | null>(null);
@@ -117,8 +125,26 @@ export default function OnboardingScreen() {
   const [prefs, setPrefs] = useState<PrefsForm>(EMPTY_PREFS);
   const [voice, setVoice] = useState<string>("");
   const [gmailConnected, setGmailConnected] = useState<boolean>(false);
+  const [gmailError, setGmailError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState<boolean>(false);
   const [finishError, setFinishError] = useState<string | null>(null);
+
+  // Pick up the result of the Google OAuth round-trip on /onboarding?gmail=...
+  const sp = useSearchParams();
+  useEffect(() => {
+    if (sp.get("gmail") === "connected") {
+      setGmailConnected(true);
+      setStep(7);
+      router.replace("/onboarding");
+    }
+    const err = sp.get("gmail_error");
+    if (err) {
+      setGmailError(err);
+      setStep(7);
+      router.replace("/onboarding");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const total = ONBOARDING_STEPS.length;
 
   // When a resume parses, seed any About fields that are still blank.
@@ -224,12 +250,7 @@ export default function OnboardingScreen() {
           {step === 3 && <OnbRoles roles={roles} setRoles={setRoles} />}
           {step === 5 && <OnbPreferences prefs={prefs} setPrefs={setPrefs} />}
           {step === 6 && <OnbVoice value={voice} onChange={setVoice} />}
-          {step === 7 && (
-            <OnbGmail
-              connected={gmailConnected}
-              onConnect={() => setGmailConnected(true)}
-            />
-          )}
+          {step === 7 && <OnbGmail connected={gmailConnected} error={gmailError} />}
           {step === 4 && <OnbExperience />}
         </div>
 
@@ -1153,7 +1174,13 @@ function OnbVoice({ value, onChange }: { value: string; onChange: (v: string) =>
 /* ---------- Step 7: Gmail connect ---------- */
 type Privacy = { i: IconName; t: string; d: string };
 
-function OnbGmail({ connected, onConnect }: { connected: boolean; onConnect: () => void }) {
+function OnbGmail({
+  connected,
+  error,
+}: {
+  connected: boolean;
+  error: string | null;
+}) {
   const privacy: Privacy[] = [
     {
       i: "eye",
@@ -1192,14 +1219,23 @@ function OnbGmail({ connected, onConnect }: { connected: boolean; onConnect: () 
               We use read-only access scoped to messages with subjects matching the confirmation patterns we look for. We never read everything in your inbox.
             </div>
             {!connected ? (
-              <Button
-                className="mt-5"
-                variant="primary"
-                onClick={onConnect}
-                leading={<Icon name="g-mail" size={14} />}
-              >
-                Connect with Google
-              </Button>
+              <>
+                <a href="/api/auth/google/start">
+                  <Button
+                    className="mt-5"
+                    variant="primary"
+                    leading={<Icon name="g-mail" size={14} />}
+                  >
+                    Connect with Google
+                  </Button>
+                </a>
+                {error && (
+                  <div className="mt-3 flex items-start gap-1.5 text-[12.5px] text-error">
+                    <Icon name="alert-circle" size={13} className="mt-0.5 shrink-0" />
+                    Couldn&apos;t connect: {error}
+                  </div>
+                )}
+              </>
             ) : (
               <div
                 className="mt-5 flex items-center gap-2 text-[13px] font-medium"

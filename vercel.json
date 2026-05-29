@@ -3,6 +3,10 @@
     {
       "path": "/api/scrape-jobs",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/check-gmail",
+      "schedule": "0 13 * * *"
     }
   ]
 }
