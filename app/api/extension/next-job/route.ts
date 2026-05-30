@@ -1,4 +1,4 @@
-import { and, eq, ilike, or } from "drizzle-orm";
+import { and, eq, ilike, inArray, or } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { renderCoverLetterPdf } from "@/lib/submit/cover-letter-pdf";
@@ -41,9 +41,22 @@ export async function GET(req: Request) {
     const jobSlug = extractJobIdHint(url);
 
     const conds = [eq(application.userId, user.id)];
+    // Accept anything except terminal states. The extension is happy
+    // to retry failed / awaitingCode / needsHuman / queued rows — the
+    // user's already on the apply page, and the worst case is filling
+    // a form they choose not to submit.
+    // Accept anything except the two terminal happy-path states.
+    // The extension is the right tool for retrying failed / blocked /
+    // awaiting rows — the user's already on the apply page.
     const statusCond = or(
       eq(application.status, "queued"),
       eq(application.status, "needsHuman"),
+      eq(application.status, "failed"),
+      eq(application.status, "awaitingCode"),
+      eq(application.status, "submitting"),
+      eq(application.status, "tailoring"),
+      eq(application.status, "draft"),
+      eq(application.status, "pending"),
     );
     if (statusCond) conds.push(statusCond);
     const urlCond = jobSlug
