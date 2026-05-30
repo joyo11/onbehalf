@@ -35,6 +35,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       coverLetterText: row.app.coverLetterText,
       submittedAt: row.app.submittedAt,
       failureReason: row.app.failureReason,
+      customAnswersJson: row.app.customAnswersJson,
     },
     job: {
       id: row.jobRow.id,

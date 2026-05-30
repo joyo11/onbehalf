@@ -22,7 +22,7 @@ function authorized(req: Request): boolean {
   return false;
 }
 
-type Body = { userId?: string; dryRun?: boolean };
+type Body = { userId?: string; dryRun?: boolean; forceSubmit?: boolean };
 
 export async function POST(req: Request) {
   try {
@@ -60,9 +60,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ done: true, message: "No queued applications." });
     }
 
-    console.log("[process-queue] running submission", next.id, { dryRun: !!body.dryRun });
+    // Honor a per-row forceSubmit marker set by /api/approve-submit.
+    // The marker lives on customAnswersJson so we don't need a dedicated
+    // column for the (rare) approve path.
+    const [meta] = await db
+      .select({ customAnswersJson: application.customAnswersJson })
+      .from(application)
+      .where(eq(application.id, next.id))
+      .limit(1);
+    const rowForceSubmit =
+      (meta?.customAnswersJson as Record<string, unknown> | null)?.forceSubmit === true;
+    const forceSubmit = rowForceSubmit || !!(body as { forceSubmit?: boolean }).forceSubmit;
+
+    console.log("[process-queue] running submission", next.id, {
+      dryRun: !!body.dryRun,
+      forceSubmit,
+    });
     const { runSubmission } = await import("@/lib/submit/orchestrate");
-    const result = await runSubmission(next.id, { dryRun: !!body.dryRun });
+    const result = await runSubmission(next.id, { dryRun: !!body.dryRun, forceSubmit });
     console.log("[process-queue] submission result", { id: next.id, ok: result.ok, ats: result.ats });
 
     // CAPTCHA flow: when runSubmission lands the app in awaitingCode,

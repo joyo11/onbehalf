@@ -20,6 +20,14 @@ type EventRow = {
   createdAt: string;
 };
 
+type ResolvedField = {
+  label: string;
+  value: string | null;
+  source: string;
+  confidence: string;
+  reason: string;
+};
+
 type DetailPayload = {
   application: {
     id: string;
@@ -29,6 +37,12 @@ type DetailPayload = {
     coverLetterText: string | null;
     submittedAt: string | null;
     failureReason: string | null;
+    customAnswersJson: {
+      needsHumanReason?: string;
+      resolvedFields?: ResolvedField[];
+      botBlockSignal?: string;
+      botBlockDetail?: string;
+    } | null;
   };
   job: {
     id: string;
@@ -54,8 +68,31 @@ function DetailInner() {
   const [data, setData] = useState<DetailPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confetti, setConfetti] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [approveError, setApproveError] = useState<string | null>(null);
   const submitFiredRef = useRef(false);
   const confettiFiredRef = useRef(false);
+
+  async function onApproveSubmit() {
+    if (!id) return;
+    setApproving(true);
+    setApproveError(null);
+    try {
+      const res = await fetch("/api/approve-submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ applicationId: id }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setApproveError(json.error ?? `Approve failed (${res.status})`);
+      }
+    } catch {
+      setApproveError("Network error.");
+    } finally {
+      setApproving(false);
+    }
+  }
 
   useEffect(() => {
     if (!id) {
@@ -270,6 +307,18 @@ function DetailInner() {
             ))}
           </div>
 
+          {data.application.status === "needsHuman" && (
+            <NeedsHumanCard
+              reason={data.application.customAnswersJson?.needsHumanReason ?? data.application.failureReason ?? "unknown"}
+              resolvedFields={data.application.customAnswersJson?.resolvedFields ?? []}
+              onApprove={onApproveSubmit}
+              approving={approving}
+              approveError={approveError}
+              applyUrl={data.job.applyUrl}
+              botBlockSignal={data.application.customAnswersJson?.botBlockSignal}
+            />
+          )}
+
           {showThanks && (
             <div className="ob-sticker relative bg-teal-50 border border-teal-200 rounded-xl3 p-6 origin-top-left">
               <div className="absolute -top-3 -right-3 h-11 w-11 rounded-full bg-teal-500 text-white grid place-items-center ob-card-shadow">
@@ -398,6 +447,103 @@ function DetailSkeleton() {
           <div key={i} className="shimmer h-3 w-full rounded" />
         ))}
       </div>
+    </div>
+  );
+}
+
+function NeedsHumanCard({
+  reason,
+  resolvedFields,
+  onApprove,
+  approving,
+  approveError,
+  applyUrl,
+  botBlockSignal,
+}: {
+  reason: string;
+  resolvedFields: ResolvedField[];
+  onApprove: () => void;
+  approving: boolean;
+  approveError: string | null;
+  applyUrl: string;
+  botBlockSignal?: string;
+}) {
+  const lowFields = resolvedFields.filter((f) => f.confidence !== "high");
+  const isBotBlocked = reason.startsWith("bot_blocked");
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl3 p-6">
+      <Eyebrow tone="teal" className="mb-2">
+        Stopped at submit
+      </Eyebrow>
+      <p
+        className="font-display font-bold text-ink leading-tight"
+        style={{ fontSize: "1.3rem", letterSpacing: "-0.01em" }}
+      >
+        {isBotBlocked
+          ? "This board is blocking automation — finish manually."
+          : reason === "low_confidence" || reason === "abstained_required"
+            ? "I filled what I'm sure of. Need your eyes on the rest."
+            : reason === "submit_disabled"
+              ? "Demo mode — submit click is disabled by env flag."
+              : reason === "no_submit_button"
+                ? "I couldn't find the Submit button on this page."
+                : "Review and approve to send."}
+      </p>
+      <p className="text-[13px] text-ink-mute mt-2 leading-relaxed">
+        Reason: <code className="font-mono text-[12px] bg-white border border-amber-200 px-1.5 py-0.5 rounded">{reason}</code>
+        {botBlockSignal && (
+          <>
+            {" "}signal: <code className="font-mono text-[12px] bg-white border border-amber-200 px-1.5 py-0.5 rounded">{botBlockSignal}</code>
+          </>
+        )}
+      </p>
+
+      {lowFields.length > 0 && (
+        <div className="mt-4 bg-white border border-amber-200 rounded-xl2 p-4">
+          <p className="text-[12.5px] font-semibold text-ink-soft mb-2">
+            {lowFields.length} field{lowFields.length === 1 ? "" : "s"} need review
+          </p>
+          <ul className="space-y-2">
+            {lowFields.slice(0, 8).map((f, i) => (
+              <li key={i} className="text-[12.5px]">
+                <span className="text-ink-soft font-semibold">{f.label}</span>
+                <span className="text-ink-faint"> — </span>
+                <span className="text-ink">{f.value ?? "(blank)"}</span>
+                <span className="ml-2 text-[11px] font-mono text-ink-faint">
+                  {f.source}/{f.confidence}
+                </span>
+              </li>
+            ))}
+            {lowFields.length > 8 && (
+              <li className="text-[11.5px] text-ink-faint">+ {lowFields.length - 8} more</li>
+            )}
+          </ul>
+        </div>
+      )}
+
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        {!isBotBlocked && (
+          <button
+            onClick={onApprove}
+            disabled={approving}
+            className="inline-flex items-center gap-2 rounded-full bg-teal-500 hover:bg-teal-600 disabled:opacity-60 text-white text-[14px] font-semibold px-5 py-2.5 transition-colors"
+          >
+            {approving ? "Approving…" : "Approve & Submit"}
+          </button>
+        )}
+        <a
+          href={applyUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-2 rounded-full bg-white hover:bg-sand-50 border border-sand-200 text-ink text-[14px] font-semibold px-5 py-2.5 transition-colors"
+        >
+          Open form yourself <Ic.ext className="h-3.5 w-3.5" />
+        </a>
+      </div>
+
+      {approveError && (
+        <p className="mt-3 text-[12.5px] text-red-600">{approveError}</p>
+      )}
     </div>
   );
 }

@@ -121,21 +121,32 @@ function splitName(full: string | null): { first: string; last: string } {
 
 export async function runSubmission(
   applicationId: string,
-  opts: { dryRun?: boolean } = {},
+  opts: { dryRun?: boolean; forceSubmit?: boolean } = {},
 ): Promise<SubmissionResult> {
   // Dry-run forces the submit click off regardless of REAL_SUBMIT_ENABLED.
   // Used to verify form-fill correctness end-to-end without filing a real
   // application at the company.
   const realSubmitEnabled = !opts.dryRun && process.env.REAL_SUBMIT_ENABLED === "true";
+  // forceSubmit (set by /api/approve-submit) bypasses the confidence gate
+  // — the human already reviewed the filled form and approved. It also
+  // allows re-claiming an application from `needsHuman` status.
+  const forceSubmit = !!opts.forceSubmit;
 
   // Atomically claim this application. If another worker already moved it
   // past 'queued' (e.g. user double-clicked Approve & submit and two
   // process-queue runs raced), bail out — we don't want two parallel
   // Browserbase sessions spending money to fail twice.
+  //
+  // When forceSubmit is set, we also accept rows in `needsHuman` — that's
+  // the path /api/approve-submit takes after a human reviewed the filled
+  // form.
+  const claimableStatuses = forceSubmit
+    ? sql`(${application.status} = 'queued' OR ${application.status} = 'needsHuman')`
+    : eq(application.status, "queued");
   const claim = await db
     .update(application)
     .set({ status: "tailoring" })
-    .where(and(eq(application.id, applicationId), eq(application.status, "queued")))
+    .where(and(eq(application.id, applicationId), claimableStatuses))
     .returning({ id: application.id });
   if (claim.length === 0) {
     // Someone else got there first (or the row isn't in 'queued' state
@@ -429,7 +440,45 @@ export async function runSubmission(
         imageBase64: preShot.toString("base64"),
       });
 
-      if (realSubmitEnabled && result.submitButton) {
+      // Stop-at-submit gate (per 2026-05-30 sign-off). Three things must
+      // be true before we click Submit:
+      //   1. realSubmitEnabled (env flag — false = demo mode)
+      //   2. A submit button was located on the page
+      //   3. EITHER all resolved fields are high-confidence (deterministic
+      //      from profile, exact-match, etc.) — OR the human already
+      //      approved via /api/approve-submit (forceSubmit). The strict
+      //      "high-only" default is from feedback-relax-with-evidence;
+      //      Phase 2's snapshot tests will let us loosen to high+medium.
+      //   Anything else routes to needsHuman with a structured reason
+      //   that Phase D's UI will render and the user can act on.
+      const lowOrAbstainCount = resolvedFields.filter(
+        (f) => f.confidence !== "high",
+      ).length;
+      const allHighConfidence = lowOrAbstainCount === 0;
+      const submitGateOpen =
+        realSubmitEnabled && !!result.submitButton && (forceSubmit || allHighConfidence);
+      const needsHumanReason: string | null = !realSubmitEnabled
+        ? "submit_disabled"
+        : !result.submitButton
+          ? "no_submit_button"
+          : resolvedFields.some((f) => f.confidence === "abstain")
+            ? "abstained_required"
+            : !allHighConfidence
+              ? "low_confidence"
+              : null;
+
+      await logEvent(applicationId, "submit_gate_decision", {
+        submit: submitGateOpen,
+        reason: needsHumanReason,
+        allHighConfidence,
+        lowOrAbstainCount,
+        totalResolved: resolvedFields.length,
+        forceSubmit,
+        realSubmitEnabled,
+        hasSubmitButton: !!result.submitButton,
+      });
+
+      if (submitGateOpen && result.submitButton) {
         const urlBefore = session.page.url();
         await session.page.locator(result.submitButton.selector).first().click();
         // Wait longer than before — Anthropic's Greenhouse forms run
@@ -496,11 +545,31 @@ export async function runSubmission(
           succeeded: submitSucceeded,
         });
       } else {
-        await logEvent(applicationId, "demo_skipped_submit", {
-          reason: realSubmitEnabled
-            ? "no submit button found"
-            : "REAL_SUBMIT_ENABLED is false (demo mode)",
+        // Gate closed — record WHY so the review UI can render it.
+        await logEvent(applicationId, "stopped_at_submit", {
+          reason: needsHumanReason ?? "unknown",
+          allHighConfidence,
+          lowConfidenceFields: resolvedFields
+            .filter((f) => f.confidence !== "high")
+            .map((f) => ({
+              label: f.label,
+              value: f.value,
+              source: f.source,
+              confidence: f.confidence,
+              reason: f.reason,
+            })),
         });
+        if (needsHumanReason) {
+          await db
+            .update(application)
+            .set({
+              customAnswersJson: sql`COALESCE(${application.customAnswersJson}, '{}'::jsonb) || ${JSON.stringify(
+                { needsHumanReason },
+              )}::jsonb`,
+              failureReason: needsHumanReason,
+            })
+            .where(eq(application.id, applicationId));
+        }
       }
     } else {
       await logEvent(applicationId, "ats_unsupported", {
