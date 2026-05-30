@@ -8,7 +8,11 @@ type SearchParams = {
   locations?: string;
   salaryMin?: string;
   limit?: string;
+  level?: string;
 };
+
+const VALID_LEVELS = ["junior", "mid", "senior", "staff", "principal"] as const;
+type Level = (typeof VALID_LEVELS)[number];
 
 export default async function MatchesScreen({
   searchParams,
@@ -20,8 +24,11 @@ export default async function MatchesScreen({
   const locations = sp.locations ? sp.locations.split(",").filter(Boolean) : [];
   const salaryMin = sp.salaryMin ? Number(sp.salaryMin) : undefined;
   const limit = Math.max(1, Math.min(50, sp.limit ? Number(sp.limit) : 50));
+  const level = (VALID_LEVELS as readonly string[]).includes(sp.level ?? "")
+    ? (sp.level as Level)
+    : null;
 
-  const jobs = await findMatchingJobs({ roles, locations, salaryMin, limit });
+  const jobs = await findMatchingJobs({ roles, locations, salaryMin, limit, seniorityLevel: level });
 
   const strong = jobs.filter((j) => j.score >= 85).length;
   const good = jobs.filter((j) => j.score >= 70 && j.score < 85).length;

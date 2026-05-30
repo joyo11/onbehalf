@@ -22,7 +22,48 @@ export type JobsQuery = {
   locations?: string[]; // location keywords (any-match)
   salaryMin?: number;
   limit?: number;
+  /**
+   * Seniority hard-filter — when set, job titles that imply a different
+   * level are excluded BEFORE pgvector ranks the rest. Junior/Mid users
+   * shouldn't see Staff/Principal/Director postings; Senior+ users see
+   * adjacent levels but not Junior/Intern/Associate.
+   */
+  seniorityLevel?: "junior" | "mid" | "senior" | "staff" | "principal" | null;
 };
+
+/**
+ * Returns title-substring SQL patterns that should be EXCLUDED for a given
+ * seniority pick. Empty array = no level filter applied.
+ */
+function levelExclusionPatterns(level: JobsQuery["seniorityLevel"]): string[] {
+  if (!level) return [];
+  switch (level) {
+    case "junior":
+      // Junior: no Senior, Staff, Principal, Director, VP, Head of, Lead, "II", "III"
+      return [
+        "%senior%",
+        "%staff%",
+        "%principal%",
+        "%director%",
+        "% vp %",
+        "%head of%",
+        "% lead %",
+        "% ii%",
+        "% iii%",
+      ];
+    case "mid":
+      return ["%staff%", "%principal%", "%director%", "% vp %", "%head of%"];
+    case "senior":
+      // Senior: include Senior, Staff allowed adjacent; exclude Junior/Intern/Entry/Associate
+      return ["%junior%", "%intern%", "%entry%", "%associate%"];
+    case "staff":
+      return ["%junior%", "%intern%", "%entry%", "%associate%"];
+    case "principal":
+      return ["%junior%", "%intern%", "%entry%", "%associate%", "%mid%"];
+    default:
+      return [];
+  }
+}
 
 function formatSalary(min: number | null, max: number | null): string {
   if (min == null && max == null) return "Salary not listed";
@@ -200,6 +241,14 @@ export async function findMatchingJobs(q: JobsQuery): Promise<MatchedJob[]> {
         typeof ilike
       >,
     );
+  }
+
+  // Seniority hard-filter applied BEFORE pgvector ranking. Done as title
+  // NOT ILIKE for each pattern in the exclusion list — multiple exclusions
+  // combine via AND.
+  const exclusions = levelExclusionPatterns(q.seniorityLevel ?? null);
+  for (const pattern of exclusions) {
+    conds.push(sql`${job.title} NOT ILIKE ${pattern}` as ReturnType<typeof ilike>);
   }
 
   const limit = q.limit ?? 50;

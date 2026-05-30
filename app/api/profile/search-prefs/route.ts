@@ -12,6 +12,8 @@ type Body = {
   preferredLocations?: string[];
   excludedCompanies?: string[];
   desiredSalaryMin?: number | null;
+  totalYearsExperience?: string | null;
+  seniorityLevel?: string | null;
 };
 
 /**
@@ -36,6 +38,8 @@ export async function POST(req: Request) {
   if (Array.isArray(body.preferredLocations)) patch.preferredLocations = body.preferredLocations;
   if (Array.isArray(body.excludedCompanies)) patch.excludedCompanies = body.excludedCompanies;
   if (body.desiredSalaryMin !== undefined) patch.desiredSalaryMin = body.desiredSalaryMin;
+  if (body.totalYearsExperience !== undefined) patch.totalYearsExperience = body.totalYearsExperience;
+  if (body.seniorityLevel !== undefined) patch.seniorityLevel = body.seniorityLevel;
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ ok: true, updated: 0 });

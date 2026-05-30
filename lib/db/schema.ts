@@ -106,7 +106,10 @@ export const profile = pgTable("profile", {
   portfolioUrl: text("portfolio_url"),
 
   targetRoleTitles: text("target_role_titles").array().notNull().default(sql`'{}'::text[]`),
-  totalYearsExperience: text("total_years_experience"), // enum bucket as a string
+  totalYearsExperience: text("total_years_experience"), // bucket: 0-2 / 3-5 / 6-8 / 9-12 / 13+
+  // Self-identified job-title level — used as a hard filter on matches so
+  // a Mid candidate doesn't see Staff/Principal listings.
+  seniorityLevel: text("seniority_level"), // junior | mid | senior | staff | principal
   yearsAtCurrentRole: integer("years_at_current_role"),
   skillYears: jsonb("skill_years").notNull().default(sql`'{}'::jsonb`),
 

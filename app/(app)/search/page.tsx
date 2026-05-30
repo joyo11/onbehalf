@@ -12,6 +12,8 @@ export default async function SearchPage() {
     preferredLocations: [],
     excludedCompanies: [],
     desiredSalaryMin: null,
+    totalYearsExperience: null,
+    seniorityLevel: null,
   };
 
   if (user) {
@@ -21,6 +23,8 @@ export default async function SearchPage() {
         preferredLocations: profile.preferredLocations,
         excludedCompanies: profile.excludedCompanies,
         desiredSalaryMin: profile.desiredSalaryMin,
+        totalYearsExperience: profile.totalYearsExperience,
+        seniorityLevel: profile.seniorityLevel,
       })
       .from(profile)
       .where(eq(profile.userId, user.id))
@@ -31,6 +35,8 @@ export default async function SearchPage() {
         preferredLocations: p.preferredLocations ?? [],
         excludedCompanies: p.excludedCompanies ?? [],
         desiredSalaryMin: p.desiredSalaryMin,
+        totalYearsExperience: p.totalYearsExperience,
+        seniorityLevel: p.seniorityLevel,
       };
     }
   }

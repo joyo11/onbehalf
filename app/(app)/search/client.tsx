@@ -11,6 +11,18 @@ export type SearchDefaults = {
   preferredLocations: string[];
   excludedCompanies: string[];
   desiredSalaryMin: number | null;
+  totalYearsExperience: string | null;
+  seniorityLevel: string | null;
+};
+
+const YOE_OPTIONS = ["0-2", "3-5", "6-8", "9-12", "13+"] as const;
+const LEVEL_OPTIONS = ["junior", "mid", "senior", "staff", "principal"] as const;
+const LEVEL_LABEL: Record<(typeof LEVEL_OPTIONS)[number], string> = {
+  junior: "Junior",
+  mid: "Mid",
+  senior: "Senior",
+  staff: "Staff",
+  principal: "Principal+",
 };
 
 export default function SearchScreen({ defaults }: { defaults: SearchDefaults }) {
@@ -24,6 +36,8 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
   const [size, setSize] = useState<string[]>(["Startup", "Mid"]);
   const [batch, setBatch] = useState<number>(12);
   const [mode, setMode] = useState<string>("review-each");
+  const [yoe, setYoe] = useState<string | null>(defaults.totalYearsExperience);
+  const [level, setLevel] = useState<string | null>(defaults.seniorityLevel);
 
   const toggleSize = (s: string) =>
     setSize(size.includes(s) ? size.filter((x) => x !== s) : [...size, s]);
@@ -38,6 +52,8 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
         preferredLocations: locations,
         excludedCompanies: excluded,
         desiredSalaryMin: salary * 1000,
+        totalYearsExperience: yoe,
+        seniorityLevel: level,
       }),
     }).catch(() => {});
 
@@ -45,6 +61,7 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
     if (keywords.length > 0) params.set("roles", keywords.join(","));
     if (locations.length > 0) params.set("locations", locations.join(","));
     if (salary > 0) params.set("salaryMin", String(salary * 1000));
+    if (level) params.set("level", level);
     params.set("limit", String(batch));
     router.push(`/matches?${params.toString()}`);
   };
@@ -87,6 +104,44 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
               onChange={setLocations}
               placeholder="Add a city or 'Remote (Region)'…"
             />
+          </Block>
+
+          <Block label="Years of experience" hint="Used to filter and rank matches.">
+            <div className="flex flex-wrap gap-2">
+              {YOE_OPTIONS.map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setYoe(yoe === v ? null : v)}
+                  className={
+                    "h-9 px-3.5 rounded-full border text-[13px] font-semibold transition-colors " +
+                    (yoe === v
+                      ? "bg-teal-500 border-teal-500 text-white"
+                      : "bg-white border-sand-200 text-ink hover:border-ink/30")
+                  }
+                >
+                  {v} yrs
+                </button>
+              ))}
+            </div>
+          </Block>
+
+          <Block label="Seniority level" hint="Hard-filters titles that don&apos;t match.">
+            <div className="flex flex-wrap gap-2">
+              {LEVEL_OPTIONS.map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setLevel(level === v ? null : v)}
+                  className={
+                    "h-9 px-3.5 rounded-full border text-[13px] font-semibold transition-colors " +
+                    (level === v
+                      ? "bg-teal-500 border-teal-500 text-white"
+                      : "bg-white border-sand-200 text-ink hover:border-ink/30")
+                  }
+                >
+                  {LEVEL_LABEL[v]}
+                </button>
+              ))}
+            </div>
           </Block>
 
           <Block label="Minimum base salary">
