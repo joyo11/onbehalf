@@ -23,7 +23,7 @@ export type { SmartFillContext, UnknownField } from "./smart-fill";
 export async function fillGreenhouseForm(
   page: Page,
   profile: SubmissionProfile,
-  job?: { company: string; title: string; jdSummary: string },
+  job?: { company: string; title: string; jdSummary: string; budget?: import("./resolve-field").LlmBudget },
 ): Promise<{
   steps: SubmissionStep[];
   submitButton: { selector: string } | null;
@@ -96,7 +96,23 @@ export async function fillGreenhouseForm(
   const resolverCtx = job
     ? { profile, jobCtx: job, resolvedFields }
     : undefined;
-  await fillAllLabelledFields(page, profile, steps, resolverCtx);
+  // Phase 2B item 3 — conditional-field re-runs. Some forms reveal new
+  // fields after a select changes (e.g. picking US shows a state
+  // dropdown). We run fillAllLabelledFields up to 2 more times,
+  // sharing a seen set so we never re-fill anything we already
+  // resolved. Stop early if a pass fills nothing new.
+  const seenLabels = new Set<string>();
+  await fillAllLabelledFields(page, profile, steps, resolverCtx, seenLabels);
+  for (let pass = 0; pass < 2; pass++) {
+    await page.waitForTimeout(500); // let the DOM mutate after our fills
+    const r = await fillAllLabelledFields(page, profile, steps, resolverCtx, seenLabels);
+    if (r.filled === 0) break;
+    steps.push({
+      step: "conditional_rerun_filled",
+      detail: `pass ${pass + 1} → ${r.filled} newly-revealed field${r.filled === 1 ? "" : "s"}`,
+      ok: true,
+    });
+  }
 
   // Reddit-style city autocomplete React-Selects need the city name typed
   // before options load. Walk the page for any visible React-Select that
@@ -124,7 +140,7 @@ export async function fillGreenhouseForm(
   await fillEmptyRequiredTextInputs(
     page,
     steps,
-    job ? { profile, job } : undefined,
+    job ? { profile, job, budget: job.budget } : undefined,
     resolvedFields,
   );
 
@@ -384,14 +400,18 @@ async function fillAllLabelledFields(
   steps: SubmissionStep[],
   resolverCtx?: {
     profile: SubmissionProfile;
-    jobCtx: { company: string; title: string; jdSummary: string };
+    jobCtx: { company: string; title: string; jdSummary: string; budget?: import("./resolve-field").LlmBudget };
     resolvedFields?: ResolvedField[];
   },
-): Promise<void> {
+  seen?: Set<string>,
+): Promise<{ filled: number }> {
   // Build a snapshot of every visible label on the page. We do this once
   // and then iterate, because filling some fields may re-render others.
+  // The seen set is shared across passes when the caller supplies one
+  // (conditional-field re-runs in Phase 2B item 3).
   const labelEls = await page.locator("label:visible, legend:visible").all();
-  const seen = new Set<string>();
+  const seenSet = seen ?? new Set<string>();
+  let filled = 0;
 
   for (const labelEl of labelEls) {
     let question = "";
@@ -403,8 +423,8 @@ async function fillAllLabelledFields(
     } catch {
       continue;
     }
-    if (!question || seen.has(question)) continue;
-    seen.add(question);
+    if (!question || seenSet.has(question)) continue;
+    seenSet.add(question);
 
     if (isBasicField(question)) continue;
 
@@ -413,7 +433,9 @@ async function fillAllLabelledFields(
 
     try {
       const ok = await fillByLabel(page, labelEl, question, answer, steps, resolverCtx);
-      if (!ok) {
+      if (ok) {
+        filled++;
+      } else {
         steps.push({
           step: "skipped_unknown_field",
           detail: question.slice(0, 80),
@@ -428,6 +450,7 @@ async function fillAllLabelledFields(
       });
     }
   }
+  return { filled };
 }
 
 function isBasicField(q: string): boolean {
@@ -1181,7 +1204,7 @@ async function fillByLabel(
   steps: SubmissionStep[],
   resolverCtx?: {
     profile: SubmissionProfile;
-    jobCtx: { company: string; title: string; jdSummary: string };
+    jobCtx: { company: string; title: string; jdSummary: string; budget?: import("./resolve-field").LlmBudget };
     resolvedFields?: ResolvedField[];
   },
 ): Promise<boolean> {
@@ -1352,7 +1375,7 @@ export async function fillReactSelect(
   steps: SubmissionStep[],
   resolverCtx?: {
     profile: SubmissionProfile;
-    jobCtx: { company: string; title: string; jdSummary: string };
+    jobCtx: { company: string; title: string; jdSummary: string; budget?: import("./resolve-field").LlmBudget };
     resolvedFields?: ResolvedField[];
   },
 ): Promise<boolean> {
@@ -1501,6 +1524,7 @@ export async function fillReactSelect(
         availableOptions: optionTexts.filter((t) => t.trim().length > 0),
         profile: resolverCtx.profile,
         jobCtx: resolverCtx.jobCtx,
+        budget: resolverCtx.jobCtx.budget,
       });
       resolverCtx.resolvedFields?.push({
         label: question.slice(0, 200),
@@ -1637,7 +1661,7 @@ async function fillRadioGroup(
   steps: SubmissionStep[],
   resolverCtx?: {
     profile: SubmissionProfile;
-    jobCtx: { company: string; title: string; jdSummary: string };
+    jobCtx: { company: string; title: string; jdSummary: string; budget?: import("./resolve-field").LlmBudget };
     resolvedFields?: ResolvedField[];
   },
 ): Promise<boolean> {
@@ -1699,6 +1723,7 @@ async function fillRadioGroup(
       availableOptions: visible,
       profile: resolverCtx.profile,
       jobCtx: resolverCtx.jobCtx,
+      budget: resolverCtx.jobCtx.budget,
     });
     resolverCtx.resolvedFields?.push({
       label: question.slice(0, 200),

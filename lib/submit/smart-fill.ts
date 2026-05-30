@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { tryConsumeBudget, type LlmBudget } from "./resolve-field";
 import type { SubmissionProfile } from "./types";
 
 /**
@@ -23,6 +24,7 @@ export type UnknownField = {
 export type SmartFillContext = {
   profile: SubmissionProfile;
   job: { company: string; title: string; jdSummary: string };
+  budget?: LlmBudget;
 };
 
 /** Hard server-side guard so a chatty model can't blow past field limits. */
@@ -66,19 +68,13 @@ function slimProfile(profile: SubmissionProfile): Record<string, unknown> {
   };
 }
 
-function buildUserPrompt(fields: UnknownField[], ctx: SmartFillContext): string {
+/** Stable context for cache_control — same string within one run. */
+function buildStableContext(ctx: SmartFillContext): string {
   const slim = slimProfile(ctx.profile);
-  const fieldsBlock = fields
-    .map((f, i) => {
-      const parts = [`${i + 1}. selector: ${f.selector}`, `   kind: ${f.kind}`, `   label: ${f.label}`];
-      if (f.helperText) parts.push(`   helperText: ${f.helperText}`);
-      if (typeof f.maxLength === "number") parts.push(`   maxLength: ${f.maxLength}`);
-      return parts.join("\n");
-    })
-    .join("\n\n");
-
-  const jdSummary = ctx.job.jdSummary.trim().length > 0 ? ctx.job.jdSummary : "(no JD summary available — work from company + title)";
-
+  const jdSummary =
+    ctx.job.jdSummary.trim().length > 0
+      ? ctx.job.jdSummary
+      : "(no JD summary available — work from company + title)";
   return [
     "JOB CONTEXT",
     `Company: ${ctx.job.company}`,
@@ -87,7 +83,20 @@ function buildUserPrompt(fields: UnknownField[], ctx: SmartFillContext): string 
     "",
     "CANDIDATE PROFILE (JSON)",
     JSON.stringify(slim, null, 2),
-    "",
+  ].join("\n");
+}
+
+/** Variable section — changes per batch. */
+function buildVariableSection(fields: UnknownField[]): string {
+  const fieldsBlock = fields
+    .map((f, i) => {
+      const parts = [`${i + 1}. selector: ${f.selector}`, `   kind: ${f.kind}`, `   label: ${f.label}`];
+      if (f.helperText) parts.push(`   helperText: ${f.helperText}`);
+      if (typeof f.maxLength === "number") parts.push(`   maxLength: ${f.maxLength}`);
+      return parts.join("\n");
+    })
+    .join("\n\n");
+  return [
     "FIELDS TO ANSWER",
     fieldsBlock,
     "",
@@ -127,9 +136,15 @@ export async function inferAnswers(
   const out = new Map<string, string>();
   if (fields.length === 0) return out;
   if (!process.env.ANTHROPIC_API_KEY) return out;
+  // Cap one batched smart-fill call at min(fields.length, 8) per the
+  // reviewer plan, and consume from the shared run budget so a 50-field
+  // form can't blow through the LLM allowance.
+  const batch = fields.slice(0, 8);
+  if (!tryConsumeBudget(ctx.budget, batch.length)) return out;
 
   const client = new Anthropic();
-  const userPrompt = buildUserPrompt(fields, ctx);
+  const stableContext = buildStableContext(ctx);
+  const variableSection = buildVariableSection(batch);
 
   // Wrap the SDK call in our own timeout — the SDK's internal retries can
   // otherwise eat through our budget while we wait.
@@ -146,8 +161,15 @@ export async function inferAnswers(
           {
             model,
             max_tokens: 1500,
-            system: SYSTEM_PROMPT,
-            messages: [{ role: "user", content: userPrompt }],
+            // Phase 2B item 6 — same stable cache_control breakpoints
+            // as resolveSelectField. Cached portion (system + stable
+            // context) is shared across both code paths AND across
+            // subsequent fields/calls within the 5-minute window.
+            system: [
+              { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+              { type: "text", text: stableContext, cache_control: { type: "ephemeral" } },
+            ],
+            messages: [{ role: "user", content: variableSection }],
           },
           { signal: controller.signal },
         );
@@ -170,7 +192,7 @@ export async function inferAnswers(
 
     if (!parsed) return out;
 
-    for (const f of fields) {
+    for (const f of batch) {
       const raw = parsed[f.selector];
       if (typeof raw !== "string" || raw.trim().length === 0) continue;
       out.set(f.selector, clipAnswer(raw, f));

@@ -400,10 +400,17 @@ export async function runSubmission(
       // unknown required fields). jdSummary is the first 1500 chars of the
       // JD; if jdText is missing we fall back to company+title only.
       const jdRaw = (row.jobRow as { jdText?: string | null }).jdText ?? "";
+      // Shared LLM budget per the 2026-05-30 reviewer plan — max 3
+      // batched calls + 20 fields across the whole runSubmission. The
+      // budget object is mutated by every resolveSelectField and
+      // inferAnswers call so a 50-field form can't fan out.
+      const { DEFAULT_BUDGET } = await import("./resolve-field");
+      const llmBudget = DEFAULT_BUDGET();
       const jobCtx = {
         company: row.jobRow.company,
         title: row.jobRow.title,
         jdSummary: jdRaw.slice(0, 1500),
+        budget: llmBudget,
       };
       const result =
         ats === "greenhouse"
@@ -411,6 +418,10 @@ export async function runSubmission(
           : ats === "lever"
             ? await fillLeverForm(session.page, subProfile, jobCtx)
             : await fillAshbyForm(session.page, subProfile, jobCtx);
+      await logEvent(applicationId, "llm_budget_after_fill", {
+        callsRemaining: llmBudget.callsRemaining,
+        fieldsRemaining: llmBudget.fieldsRemaining,
+      });
       steps.push(...result.steps);
       resolvedFields.push(...result.resolvedFields);
       for (const s of result.steps) {

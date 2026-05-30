@@ -32,7 +32,33 @@ export type ResolveSelectInput = {
   availableOptions: string[];
   profile: SubmissionProfile;
   jobCtx: { company: string; title: string; jdSummary: string };
+  budget?: LlmBudget;
 };
+
+/**
+ * Shared budget across one runSubmission. The orchestrator constructs it
+ * once and threads the same instance into smart-fill + every resolver
+ * call so a complex form (Workday-shaped 50-field monsters) can't fan
+ * out into 30 LLM round-trips.
+ *
+ * Caps per the 2026-05-30 reviewer plan: max 3 calls, max 20 fields
+ * across the whole run. When exhausted, callers immediately return
+ * abstain — Phase 3's gate handles the rest.
+ */
+export type LlmBudget = {
+  callsRemaining: number;
+  fieldsRemaining: number;
+};
+
+export const DEFAULT_BUDGET: () => LlmBudget = () => ({ callsRemaining: 3, fieldsRemaining: 20 });
+
+export function tryConsumeBudget(budget: LlmBudget | undefined, fields: number): boolean {
+  if (!budget) return true; // legacy callers without a budget
+  if (budget.callsRemaining <= 0 || budget.fieldsRemaining < fields) return false;
+  budget.callsRemaining -= 1;
+  budget.fieldsRemaining -= fields;
+  return true;
+}
 
 const ABSTAIN_SENTINEL = "__ABSTAIN__";
 const ANTHROPIC_TIMEOUT_MS = 8_000;
@@ -72,23 +98,17 @@ function slimProfile(profile: SubmissionProfile): Record<string, unknown> {
   };
 }
 
-function buildUserPrompt(input: ResolveSelectInput): string {
+/**
+ * The stable context — same string across every resolveSelectField call
+ * within one orchestrate run. Gets a cache_control breakpoint.
+ */
+function buildStableContext(input: ResolveSelectInput): string {
   const slim = slimProfile(input.profile);
-  const optionsBlock = input.availableOptions
-    .map((opt, i) => `  ${i + 1}. ${opt}`)
-    .join("\n");
   const jdSummary =
     input.jobCtx.jdSummary.trim().length > 0
       ? input.jobCtx.jdSummary
       : "(no JD summary available — work from company + title)";
   return [
-    "QUESTION",
-    input.label,
-    input.helperText ? `Helper text: ${input.helperText}` : "",
-    "",
-    "OPTIONS",
-    optionsBlock,
-    "",
     "JOB CONTEXT",
     `Company: ${input.jobCtx.company}`,
     `Title: ${input.jobCtx.title}`,
@@ -96,6 +116,23 @@ function buildUserPrompt(input: ResolveSelectInput): string {
     "",
     "CANDIDATE PROFILE",
     JSON.stringify(slim, null, 2),
+  ].join("\n");
+}
+
+/**
+ * The variable section — changes per field. Stays uncached.
+ */
+function buildVariableSection(input: ResolveSelectInput): string {
+  const optionsBlock = input.availableOptions
+    .map((opt, i) => `  ${i + 1}. ${opt}`)
+    .join("\n");
+  return [
+    "QUESTION",
+    input.label,
+    input.helperText ? `Helper text: ${input.helperText}` : "",
+    "",
+    "OPTIONS",
+    optionsBlock,
     "",
     `Respond with exactly one option from the list above (verbatim) or ${ABSTAIN_SENTINEL}.`,
   ]
@@ -131,9 +168,24 @@ export async function resolveSelectField(
       reason: "ANTHROPIC_API_KEY missing — no LLM available",
     };
   }
+  if (!tryConsumeBudget(input.budget, 1)) {
+    return {
+      value: null,
+      confidence: "abstain",
+      source: "abstain",
+      reason: "LLM budget exhausted for this run — Phase 3 will route to needsHuman",
+    };
+  }
 
   const client = new Anthropic();
-  const userPrompt = buildUserPrompt(input);
+  // Phase 2B item 6 — prompt caching. The stable parts (system prompt
+  // + job context + slim profile) get cache_control breakpoints so
+  // subsequent resolver calls within the same orchestrate run only
+  // re-tokenize the variable bit (the field label + visible options).
+  // Anthropic's ephemeral cache lasts ~5 minutes — plenty for one
+  // form fill.
+  const stableContext = buildStableContext(input);
+  const variableSection = buildVariableSection(input);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ANTHROPIC_TIMEOUT_MS);
 
@@ -147,8 +199,11 @@ export async function resolveSelectField(
           {
             model,
             max_tokens: 200,
-            system: SYSTEM_PROMPT,
-            messages: [{ role: "user", content: userPrompt }],
+            system: [
+              { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+              { type: "text", text: stableContext, cache_control: { type: "ephemeral" } },
+            ],
+            messages: [{ role: "user", content: variableSection }],
           },
           { signal: controller.signal },
         );

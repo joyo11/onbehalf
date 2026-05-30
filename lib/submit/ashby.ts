@@ -37,7 +37,7 @@ import type { ResolvedField, SubmissionProfile, SubmissionStep } from "./types";
 export async function fillAshbyForm(
   page: Page,
   profile: SubmissionProfile,
-  job?: { company: string; title: string; jdSummary: string },
+  job?: { company: string; title: string; jdSummary: string; budget?: import("./resolve-field").LlmBudget },
 ): Promise<{
   steps: SubmissionStep[];
   submitButton: { selector: string } | null;
