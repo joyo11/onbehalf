@@ -44,22 +44,38 @@ export async function fillAshbyForm(
 
   // Ashby is a React SPA — domcontentloaded fires before the form mounts.
   // Wait for ANY of the markers that signal the application form is on
-  // the page: the file-upload input, a system field input, or the form
-  // container. Up to 20s; long enough for slow networks, short enough
-  // that a truly unresponsive page doesn't blow the 60s function budget.
+  // the page. Up to 25s; long enough for slow JS-bundle loads, short
+  // enough that a truly broken page doesn't blow the 60s function budget.
+  const markerSelector =
+    "input[type='file'], input[name*='_systemfield' i], input[name='name'], input[name='email'], form[class*='application' i], [class*='ashby-application'], [data-ashby-application-form], [class*='application-form']";
   const ready = await page
-    .waitForSelector(
-      "input[type='file'], input[name*='_systemfield' i], form[class*='application' i], [class*='ashby-application'], [data-ashby-application-form]",
-      { timeout: 20_000, state: "attached" },
-    )
+    .waitForSelector(markerSelector, { timeout: 25_000, state: "attached" })
     .then(() => true)
     .catch(() => false);
   steps.push({ step: "ashby_form_ready", detail: String(ready), ok: ready });
-  if (ready) {
+  if (!ready) {
+    // Snapshot what we did see so a human can diagnose. This is short
+    // and runs only on the failure path so it doesn't add latency to the
+    // happy path.
+    const bodyText = (await page.locator("body").textContent().catch(() => "")) ?? "";
+    const inputCount = await page.locator("input").count().catch(() => -1);
+    const buttonCount = await page.locator("button").count().catch(() => -1);
+    const url = page.url();
+    steps.push({
+      step: "ashby_debug_no_form",
+      detail: JSON.stringify({
+        url,
+        inputCount,
+        buttonCount,
+        bodyPreview: bodyText.replace(/\s+/g, " ").slice(0, 400),
+      }),
+      ok: false,
+    });
+  } else {
     // Once a marker is attached, give React one more tick to finish
     // populating the rest of the fields (helps when the file input
     // mounts first and the other inputs lag behind).
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(1000);
   }
 
   // ── Basic identity ────────────────────────────────────────
