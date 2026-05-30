@@ -164,7 +164,8 @@ async function runVisionFill({ dryRun }) {
   $("filled-list").appendChild(head);
   for (const item of r.results.slice(0, 14)) {
     const li = document.createElement("li");
-    li.textContent = `[${item.status}] ${item.targetLabel}: ${String(item.value ?? "—").slice(0, 50)}`;
+    const label = item.fieldName ?? item.targetLabel ?? "(unnamed)";
+    li.textContent = `[${item.status}] ${label}: ${String(item.value ?? "—").slice(0, 50)}`;
     li.style.fontWeight = "400";
     li.style.fontSize = "12px";
     $("filled-list").appendChild(li);
