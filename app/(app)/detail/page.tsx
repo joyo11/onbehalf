@@ -135,7 +135,7 @@ function DetailInner() {
   const brand = brandFor(data.job.company);
 
   return (
-    <div className="max-w-[1180px] mx-auto px-9 py-8">
+    <div className="max-w-[1180px] mx-auto px-5 sm:px-9 py-6 sm:py-8">
       <Link
         href="/dashboard"
         className="inline-flex items-center gap-2 text-[14px] font-semibold text-ink-mute hover:text-ink transition-colors mb-6"

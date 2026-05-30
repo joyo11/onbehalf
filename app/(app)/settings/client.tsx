@@ -55,7 +55,7 @@ export default function SettingsScreen({ data }: { data: SettingsData }) {
   const p = data.profile;
 
   return (
-    <div className="max-w-[1180px] mx-auto px-9 py-9 pb-32">
+    <div className="max-w-[1180px] mx-auto px-5 sm:px-9 py-7 sm:py-9 pb-32">
       <Eyebrow tone="teal" className="mb-3">
         Profile &amp; settings
       </Eyebrow>

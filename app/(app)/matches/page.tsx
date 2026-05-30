@@ -36,7 +36,7 @@ export default async function MatchesScreen({
 
   if (jobs.length === 0) {
     return (
-      <div className="max-w-[1180px] mx-auto px-9 py-9">
+      <div className="max-w-[1180px] mx-auto px-5 sm:px-9 py-7 sm:py-9">
         <div className="bg-white rounded-xl3 border border-sand-200 ob-card-shadow p-14 text-center">
           <div className="h-14 w-14 rounded-xl2 border border-sand-200 bg-sand-50 grid place-items-center mx-auto mb-4">
             <Ic.search className="h-6 w-6 text-ink-mute" />
@@ -53,7 +53,7 @@ export default async function MatchesScreen({
   }
 
   return (
-    <div className="max-w-[1180px] mx-auto px-9 py-9">
+    <div className="max-w-[1180px] mx-auto px-5 sm:px-9 py-7 sm:py-9">
       <div className="flex items-start justify-between gap-6">
         <div>
           <Eyebrow tone="teal" className="mb-3">

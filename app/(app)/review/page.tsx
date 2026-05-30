@@ -177,8 +177,8 @@ function ReviewInner() {
         <Screeners answers={data.screeners.answers} />
       </div>
 
-      <div className="fixed bottom-0 right-0 left-[256px] z-30 border-t border-sand-200 bg-white">
-        <div className="max-w-[1180px] mx-auto px-9 py-3.5 flex items-center justify-between">
+      <div className="fixed bottom-0 right-0 left-0 md:left-[256px] z-30 border-t border-sand-200 bg-white">
+        <div className="max-w-[1180px] mx-auto px-5 sm:px-9 py-3.5 flex items-center justify-between">
           <Link
             href="/matches"
             className="inline-flex items-center gap-2 rounded-full text-ink-soft hover:text-ink text-[14px] font-semibold px-4 py-2 transition-colors"

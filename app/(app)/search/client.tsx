@@ -67,7 +67,7 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
   };
 
   return (
-    <div className="max-w-[1180px] mx-auto px-9 py-9">
+    <div className="max-w-[1180px] mx-auto px-5 sm:px-9 py-7 sm:py-9">
       <div className="flex items-start justify-between gap-4">
         <div>
           <Eyebrow tone="teal" className="mb-3">

@@ -45,7 +45,7 @@ function TopNav() {
     (user?.lastName?.[0] ?? "").toUpperCase();
   return (
     <header className="sticky top-0 z-40 backdrop-blur-md bg-cream/80 border-b border-sand-200/70">
-      <div className="max-w-[1180px] mx-auto px-7 h-[74px] flex items-center justify-between">
+      <div className="max-w-[1180px] mx-auto px-5 sm:px-7 h-[68px] sm:h-[74px] flex items-center justify-between">
         <Link href="/">
           <ObLogo />
         </Link>
@@ -162,7 +162,7 @@ function LiveCard() {
           Live preview
         </Eyebrow>
       </div>
-      <div className="relative bg-white rounded-xl3 ob-card-shadow-lg border border-sand-200 p-6 w-[400px] max-w-full">
+      <div className="relative bg-white rounded-xl3 ob-card-shadow-lg border border-sand-200 p-6 w-full max-w-[400px]">
         <div className="absolute -bottom-3 left-6 flex items-center gap-1.5 bg-white rounded-full px-3 py-1.5 ob-card-shadow border border-sand-200">
           <span className="h-2 w-2 rounded-full bg-teal-500 ob-blink" />
           <span className="text-[12px] font-bold text-teal-700 tracking-wide">LIVE</span>
@@ -225,11 +225,11 @@ function LiveCard() {
 
 function Hero() {
   return (
-    <section className="max-w-[1180px] mx-auto px-7 pt-16 pb-24 grid lg:grid-cols-[1.12fr_0.88fr] gap-12 items-center">
+    <section className="max-w-[1180px] mx-auto px-5 sm:px-7 pt-12 sm:pt-16 pb-16 sm:pb-24 grid lg:grid-cols-[1.12fr_0.88fr] gap-10 lg:gap-12 items-center">
       <div>
         <h1
           className="font-display font-black text-ink"
-          style={{ fontSize: "clamp(2rem, 5vw, 4.6rem)", lineHeight: 0.98, letterSpacing: "-0.035em" }}
+          style={{ fontSize: "clamp(2rem, 7vw, 4.2rem)", lineHeight: 0.98, letterSpacing: "-0.035em" }}
         >
           <span className="block">
             <Cascade text="AI that " base={120} />
@@ -330,7 +330,7 @@ function HowItWorks() {
   return (
     <section
       id="how"
-      className="max-w-[1180px] mx-auto px-7 py-20 border-t border-sand-200"
+      className="max-w-[1180px] mx-auto px-5 sm:px-7 py-14 sm:py-20 border-t border-sand-200"
     >
       <Eyebrow tone="teal" className="mb-4">
         How it works
@@ -371,7 +371,7 @@ function HowItWorks() {
 /* ───────────────────────── Footer ───────────────────────── */
 function Footer() {
   return (
-    <footer className="max-w-[1180px] mx-auto px-7 py-16 border-t border-sand-200">
+    <footer className="max-w-[1180px] mx-auto px-5 sm:px-7 py-12 sm:py-16 border-t border-sand-200">
       <div className="flex flex-col md:flex-row justify-between gap-8">
         <div className="max-w-[34ch]">
           <ObLogo />

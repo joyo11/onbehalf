@@ -40,12 +40,12 @@ export default function DashboardClient({ firstName, stats, recent, gmailConnect
   const [mode, setMode] = useState<"empty" | "active">(hasData ? "active" : "empty");
 
   return (
-    <div className="max-w-[1180px] mx-auto px-9 py-9">
+    <div className="max-w-[1180px] mx-auto px-5 sm:px-9 py-7 sm:py-9">
       <div className="flex items-start justify-between gap-6">
         <div>
           <h1
-            className="font-display font-black text-ink whitespace-nowrap"
-            style={{ fontSize: "clamp(2rem, 3vw, 2.7rem)", lineHeight: 1.05, letterSpacing: "-0.03em" }}
+            className="font-display font-black text-ink"
+            style={{ fontSize: "clamp(1.75rem, 4vw, 2.7rem)", lineHeight: 1.05, letterSpacing: "-0.03em" }}
           >
             {greeting()}, {firstName}.
           </h1>

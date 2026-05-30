@@ -69,7 +69,7 @@ export default function TrackerClient({
 
   return (
     <div className="min-h-screen text-ink pb-24">
-      <div className="max-w-[1280px] mx-auto px-8">
+      <div className="max-w-[1280px] mx-auto px-5 sm:px-8">
         <PageHeader
           total={TRACKER_ROWS.length}
           lastUpdated={lastUpdated}
