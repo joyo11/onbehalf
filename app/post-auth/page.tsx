@@ -1,47 +1,27 @@
-import { currentUser } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db/client";
-import { profile, user as userTable } from "@/lib/db/schema";
+import { profile } from "@/lib/db/schema";
 
 /**
- * Central post-authentication router. Clerk redirects here after both
- * sign-in and sign-up. Decides where the user actually belongs.
+ * Central post-authentication router. Clerk redirects here after sign-in /
+ * sign-up. Decides where the user actually belongs.
+ *
+ * Gmail readonly is now OPTIONAL — we no longer auto-redirect Google
+ * sign-ins to the Gmail consent step. Reason: Gmail readonly is a Google-
+ * restricted scope (test users only until verification), which blocks
+ * public sign-up entirely. The agent works fine without it; users can opt
+ * in from Settings any time to enable auto-confirmation tracking.
  *
  * Priority:
- *   1. User signed in with Google AND Gmail readonly not granted yet
- *      → auto-trigger /api/auth/google/start (Option A: two consent screens
- *        in a row, no manual button)
- *   2. Profile incomplete (no fullName or no target roles)
- *      → /onboarding
- *   3. Otherwise → /dashboard
+ *   1. Profile incomplete (no fullName or no target roles) → /onboarding
+ *   2. Otherwise → /dashboard
  */
 export default async function PostAuthPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
 
-  // 1. Gmail auto-flow: did they sign in via Google? Do we already have their refresh token?
-  const clerk = await currentUser();
-  const signedInWithGoogle =
-    clerk?.externalAccounts?.some((a) => a.provider === "oauth_google") ?? false;
-
-  const [u] = await db
-    .select({
-      gmailRefreshToken: userTable.gmailRefreshToken,
-    })
-    .from(userTable)
-    .where(eq(userTable.id, user.id))
-    .limit(1);
-
-  const hasGmail = Boolean(u?.gmailRefreshToken);
-  const googleOAuthConfigured = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
-
-  if (signedInWithGoogle && !hasGmail && googleOAuthConfigured) {
-    redirect("/api/auth/google/start");
-  }
-
-  // 2. Profile completeness gate
   const [p] = await db
     .select({
       fullName: profile.fullName,
