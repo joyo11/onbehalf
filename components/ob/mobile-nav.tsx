@@ -42,7 +42,7 @@ export function MobileTopBar() {
 
   return (
     <>
-      <header className="md:hidden sticky top-0 z-40 bg-cream/90 backdrop-blur border-b border-sand-200">
+      <header className="lg:hidden sticky top-0 z-40 bg-cream/90 backdrop-blur border-b border-sand-200">
         <div className="h-14 px-4 flex items-center justify-between gap-3">
           <button
             onClick={() => setOpen(true)}
@@ -66,7 +66,7 @@ export function MobileTopBar() {
       {/* Drawer */}
       <div
         className={
-          "md:hidden fixed inset-0 z-50 transition-opacity duration-200 " +
+          "lg:hidden fixed inset-0 z-50 transition-opacity duration-200 " +
           (open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none")
         }
       >

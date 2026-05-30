@@ -23,7 +23,7 @@ const PRODUCT: NavItem[] = [
 export function ObSidebar() {
   const pathname = usePathname();
   return (
-    <aside className="hidden md:flex w-[256px] shrink-0 h-screen flex-col bg-panel text-panel-text sticky top-0">
+    <aside className="hidden lg:flex w-[256px] shrink-0 h-screen flex-col bg-panel text-panel-text sticky top-0">
       <div className="px-6 pt-7 pb-6">
         <Link href="/" className="block text-white">
           <ObLogo />

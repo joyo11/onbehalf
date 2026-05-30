@@ -58,13 +58,13 @@ function TopNav() {
           <SignedOut>
             <Link
               href="/sign-in"
-              className="text-[15px] font-semibold text-ink-mute hover:text-ink transition-colors"
+              className="hidden sm:inline-block text-[15px] font-semibold text-ink-mute hover:text-ink transition-colors"
             >
               Sign in
             </Link>
             <Link
               href="/sign-up"
-              className="group inline-flex items-center gap-2 rounded-full bg-teal-500 hover:bg-teal-600 text-white font-semibold text-[15px] pl-5 pr-4 py-2.5 transition-colors"
+              className="group inline-flex items-center gap-2 rounded-full bg-teal-500 hover:bg-teal-600 text-white font-semibold text-[14px] sm:text-[15px] pl-4 sm:pl-5 pr-3 sm:pr-4 py-2.5 transition-colors whitespace-nowrap"
             >
               Get started
               <Ic.arrow className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
@@ -73,14 +73,18 @@ function TopNav() {
           <SignedIn>
             <Link
               href="/dashboard"
-              className="group inline-flex items-center gap-2 rounded-full bg-teal-500 hover:bg-teal-600 text-white font-semibold text-[15px] pl-5 pr-4 py-2.5 transition-colors"
+              className="group inline-flex items-center gap-2 rounded-full bg-teal-500 hover:bg-teal-600 text-white font-semibold text-[14px] sm:text-[15px] pl-4 sm:pl-5 pr-3 sm:pr-4 py-2.5 transition-colors whitespace-nowrap"
             >
-              Open dashboard
+              <span className="hidden sm:inline">Open dashboard</span>
+              <span className="sm:hidden">Dashboard</span>
               <Ic.arrow className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
-            <div className="h-9 w-9 rounded-full bg-teal-500 text-white grid place-items-center font-bold text-[13px]">
+            <Link
+              href="/dashboard"
+              className="h-9 w-9 rounded-full bg-teal-500 text-white grid place-items-center font-bold text-[13px] shrink-0"
+            >
               {initials || "SJ"}
-            </div>
+            </Link>
           </SignedIn>
         </div>
       </div>
