@@ -68,8 +68,8 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
 
   return (
     <div className="max-w-[1180px] mx-auto px-5 sm:px-9 py-7 sm:py-9">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
+        <div className="min-w-0">
           <Eyebrow tone="teal" className="mb-3">
             New search
           </Eyebrow>

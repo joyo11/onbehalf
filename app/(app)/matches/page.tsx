@@ -54,8 +54,8 @@ export default async function MatchesScreen({
 
   return (
     <div className="max-w-[1180px] mx-auto px-5 sm:px-9 py-7 sm:py-9">
-      <div className="flex items-start justify-between gap-6">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 sm:gap-6">
+        <div className="min-w-0">
           <Eyebrow tone="teal" className="mb-3">
             Search results
           </Eyebrow>

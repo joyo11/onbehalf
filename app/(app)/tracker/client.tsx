@@ -153,15 +153,15 @@ function PageHeader({
   onExport: () => void;
 }) {
   return (
-    <div className="pt-9 pb-5">
-      <div className="flex items-end justify-between gap-4">
-        <div>
+    <div className="pt-7 sm:pt-9 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div className="min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-teal-600 mb-3">
             Tracker
           </p>
           <h1
             className="font-display font-black text-ink"
-            style={{ fontSize: "clamp(2rem, 3vw, 2.7rem)", lineHeight: 1.05, letterSpacing: "-0.03em" }}
+            style={{ fontSize: "clamp(1.75rem, 4vw, 2.7rem)", lineHeight: 1.05, letterSpacing: "-0.03em" }}
           >
             Application Tracker
           </h1>
@@ -170,7 +170,7 @@ function PageHeader({
             Last updated <span className="tabular">{fmtLastUpdated(lastUpdated)}</span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 sm:shrink-0">
           <button
             onClick={onExport}
             className="inline-flex items-center gap-2 rounded-full bg-white hover:bg-sand-50 border border-sand-200 text-ink text-[13px] font-semibold px-4 py-2 transition-colors"

@@ -60,17 +60,17 @@ export default function SettingsScreen({ data }: { data: SettingsData }) {
         Profile &amp; settings
       </Eyebrow>
       <h1
-        className="font-display font-black text-ink"
-        style={{ fontSize: "clamp(2rem, 3vw, 2.7rem)", lineHeight: 1.05, letterSpacing: "-0.03em" }}
+        className="font-display font-black text-ink break-words"
+        style={{ fontSize: "clamp(1.75rem, 4vw, 2.7rem)", lineHeight: 1.05, letterSpacing: "-0.03em" }}
       >
         {p.fullName || data.email.split("@")[0]}
       </h1>
-      <p className="mt-2.5 text-[14px] text-ink-mute">
+      <p className="mt-2.5 text-[14px] text-ink-mute break-words">
         {data.email} <Dot /> Member since {data.memberSince} <Dot /> {data.plan}
       </p>
 
-      <div className="mt-9 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-7">
-        <div className="space-y-7">
+      <div className="mt-7 sm:mt-9 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5 sm:gap-7">
+        <div className="space-y-5 sm:space-y-7">
           <IdentitySection initial={p} />
           <CareerSection initial={p} />
           <EligibilitySection initial={p} />
@@ -475,7 +475,7 @@ function Section({
 }) {
   const [status, setStatus] = useState<SaveStatus>("idle");
   return (
-    <div className="bg-white rounded-xl3 border border-sand-200 ob-card-shadow p-6">
+    <div className="bg-white rounded-xl3 border border-sand-200 ob-card-shadow p-5 sm:p-6">
       <div className="flex items-start justify-between gap-3 mb-5">
         <div>
           <p className="font-display font-bold text-ink text-[19px]">{title}</p>

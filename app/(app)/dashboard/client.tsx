@@ -41,19 +41,21 @@ export default function DashboardClient({ firstName, stats, recent, gmailConnect
 
   return (
     <div className="max-w-[1180px] mx-auto px-5 sm:px-9 py-7 sm:py-9">
-      <div className="flex items-start justify-between gap-6">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 sm:gap-6">
+        <div className="min-w-0">
           <h1
             className="font-display font-black text-ink"
             style={{ fontSize: "clamp(1.75rem, 4vw, 2.7rem)", lineHeight: 1.05, letterSpacing: "-0.03em" }}
           >
             {greeting()}, {firstName}.
           </h1>
-          <p className="mt-2.5 text-[16px] text-ink-mute">Here&apos;s what your agent has been up to.</p>
+          <p className="mt-2.5 text-[15px] sm:text-[16px] text-ink-mute">
+            Here&apos;s what your agent has been up to.
+          </p>
         </div>
         <Link
           href="/search"
-          className="shrink-0 inline-flex items-center gap-2.5 rounded-full bg-teal-500 hover:bg-teal-600 text-white font-semibold text-[15px] px-5 py-3 whitespace-nowrap transition-colors ob-card-shadow"
+          className="sm:shrink-0 inline-flex items-center justify-center gap-2.5 rounded-full bg-teal-500 hover:bg-teal-600 text-white font-semibold text-[15px] px-5 py-3 whitespace-nowrap transition-colors ob-card-shadow w-full sm:w-auto"
         >
           <Ic.search className="h-[18px] w-[18px]" />
           New search

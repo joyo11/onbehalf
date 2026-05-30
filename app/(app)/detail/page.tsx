@@ -149,23 +149,25 @@ function DetailInner() {
       >
         Your agent is working ✦
       </div>
-      <div className="flex items-end justify-between gap-6 mb-7">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 sm:gap-6 mb-7">
         <div className="flex items-center gap-4 min-w-0">
           <CompanyTile letter={brand.letter} color={brand.color} size={52} radius={14} />
           <div className="min-w-0">
             <h1
               className="font-display font-black text-ink leading-[1.12]"
-              style={{ fontSize: "clamp(1.45rem, 2.1vw, 1.9rem)", letterSpacing: "-0.02em" }}
+              style={{ fontSize: "clamp(1.3rem, 2.1vw, 1.9rem)", letterSpacing: "-0.02em" }}
             >
               {data.job.title}
             </h1>
-            <p className="text-[14px] text-ink-mute mt-1.5">
+            <p className="text-[14px] text-ink-mute mt-1.5 break-words">
               {data.job.company}
               {data.job.location ? ` · ${data.job.location}` : ""}
             </p>
           </div>
         </div>
-        <StatusPill status={data.application.status} />
+        <div className="sm:shrink-0">
+          <StatusPill status={data.application.status} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_350px] gap-6 items-start">
@@ -194,7 +196,7 @@ function DetailInner() {
             </div>
 
             {/* live view embed area */}
-            <div className="relative bg-[#F7F8FA] p-6 h-[420px] flex flex-col items-center justify-center text-center">
+            <div className="relative bg-[#F7F8FA] p-6 h-[300px] sm:h-[420px] flex flex-col items-center justify-center text-center">
               {liveViewUrl ? (
                 <>
                   <div className="h-14 w-14 rounded-full bg-teal-50 border-2 border-teal-200 grid place-items-center mb-4">
