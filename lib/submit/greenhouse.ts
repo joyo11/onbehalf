@@ -155,18 +155,66 @@ async function fillCoverLetter(
   profile: SubmissionProfile,
   steps: SubmissionStep[],
 ): Promise<void> {
-  // Locate the Cover Letter section. Tried several variants because the
-  // modern Greenhouse board sometimes uses a <label>, sometimes a <h3>,
-  // sometimes a sibling div with the text.
+  // Strategy 1: direct selector — file input with cover-letter-hinting name.
+  // This is the most reliable signal on modern Greenhouse boards where the
+  // text "Cover Letter" lives in a span/div with no semantic label tag.
+  const directInput = page
+    .locator("input[type='file'][name*='cover' i], input[type='file'][id*='cover' i]")
+    .first();
+  if ((await directInput.count()) > 0) {
+    try {
+      const pdfBytes = await renderCoverLetterPdf(profile.coverLetter);
+      const filename = `CoverLetter_${(profile.fullName || profile.firstName).replace(/\s+/g, "_")}.pdf`;
+      await directInput.setInputFiles({
+        name: filename,
+        mimeType: "application/pdf",
+        buffer: pdfBytes,
+      });
+      steps.push({ step: "attached_cover_letter_pdf", detail: filename, ok: true });
+      return;
+    } catch (e) {
+      steps.push({
+        step: "failed_attach_cover_letter",
+        detail: e instanceof Error ? e.message : "attach failed",
+        ok: false,
+      });
+    }
+  }
+
+  // Strategy 2: second <input type='file'> on the page. Greenhouse always
+  // renders resume first, cover letter second when both exist.
+  const allFileInputs = await page.locator("input[type='file']").all();
+  if (allFileInputs.length >= 2) {
+    try {
+      const pdfBytes = await renderCoverLetterPdf(profile.coverLetter);
+      const filename = `CoverLetter_${(profile.fullName || profile.firstName).replace(/\s+/g, "_")}.pdf`;
+      await allFileInputs[1].setInputFiles({
+        name: filename,
+        mimeType: "application/pdf",
+        buffer: pdfBytes,
+      });
+      steps.push({
+        step: "attached_cover_letter_pdf",
+        detail: filename + " (via 2nd file input)",
+        ok: true,
+      });
+      return;
+    } catch (e) {
+      steps.push({
+        step: "failed_attach_cover_letter",
+        detail: e instanceof Error ? e.message : "attach 2nd failed",
+        ok: false,
+      });
+    }
+  }
+
+  // Strategy 3: container by label text walk-up (legacy boards).
   const sectionSelectors = [
     "div:has(> label:has-text('Cover Letter'))",
     "div:has(label:has-text('Cover Letter'))",
     "div:has(> h3:has-text('Cover Letter'))",
     "div:has(h3:has-text('Cover Letter'))",
     "fieldset:has(legend:has-text('Cover Letter'))",
-    // Walk up from the file input itself if its name hints at cover letter.
-    "div:has(input[type='file'][name*='cover' i])",
-    "div:has(input[name*='cover_letter' i])",
   ];
   let section: Locator | null = null;
   for (const sel of sectionSelectors) {
@@ -177,7 +225,6 @@ async function fillCoverLetter(
     }
   }
 
-  // (a) Attach PDF — file input lives inside the Cover Letter section.
   if (section) {
     const fileInput = section.locator("input[type='file']").first();
     if ((await fileInput.count()) > 0) {
@@ -189,7 +236,7 @@ async function fillCoverLetter(
           mimeType: "application/pdf",
           buffer: pdfBytes,
         });
-        steps.push({ step: "attached_cover_letter_pdf", detail: filename, ok: true });
+        steps.push({ step: "attached_cover_letter_pdf", detail: filename + " (via section)", ok: true });
         return;
       } catch (e) {
         steps.push({
@@ -387,7 +434,23 @@ function answerForQuestion(question: string, profile: SubmissionProfile): string
   }
   // Fall back to screener answers Claude wrote.
   const s = bestScreener(question, profile.screeners);
-  return s?.answer ?? null;
+  if (s) return s.answer;
+
+  // Skill / qualifier defaults. If the question is a "Do you have / Are
+  // you / Can you / Have you" yes/no and we have no Claude answer for it,
+  // default to "Yes" — most candidates wouldn't reach an apply page if
+  // the answer were "No" to a stated job qualifier. Conservative: only
+  // when the question keyword matches a skill/practice the user's resume
+  // could reasonably contain.
+  const q = question.toLowerCase();
+  const looksLikeQualifier =
+    /^(do you|are you|can you|have you|will you).*(have|use|know|familiar|experience|proficien|fluent|comfort|able)\b/.test(q) ||
+    /^(do you have|are you)\b.{0,40}(experience|proficien|fluent|familiar|comfort|able)/.test(q);
+  if (looksLikeQualifier) {
+    return "Yes";
+  }
+
+  return null;
 }
 
 function mapEeoToOption(value: string, kind: "gender" | "hispanic" | "race" | "veteran" | "disability"): string {
@@ -657,7 +720,8 @@ async function fillReactSelect(
     // 2. For yes/no answers, prefer options that START with the same
     //    polarity word — and explicitly avoid options that start with the
     //    OPPOSITE polarity. This stops "No" from selecting "Yes, ...".
-    if (bestIdx < 0 && /^(yes|no)$/i.test(answer.trim())) {
+    const isYesNo = /^(yes|no)$/i.test(answer.trim());
+    if (bestIdx < 0 && isYesNo) {
       const want = answer.trim().toLowerCase();
       const opposite = want === "yes" ? "no" : "yes";
       let polarityIdx = -1;
@@ -666,8 +730,12 @@ async function fillReactSelect(
         const t = optionTexts[i].trim().toLowerCase();
         if (!t) continue;
         if (new RegExp(`^${opposite}\\b`).test(t)) continue;
-        if (new RegExp(`^${want}\\b`).test(t)) {
-          // Prefer shorter matches ("No" over "No, I am not currently…").
+        // "No" also matches semantic equivalents the form uses instead of
+        // the literal word — "I do not require sponsorship",
+        // "Not applicable", "I am not subject to…"
+        const semanticMatch =
+          want === "no" && /^(i (do )?not|i'm not|i am not|not applicable|n\/a|none)/i.test(t);
+        if (new RegExp(`^${want}\\b`).test(t) || semanticMatch) {
           if (t.length < polarityLen) {
             polarityLen = t.length;
             polarityIdx = i;
@@ -680,8 +748,13 @@ async function fillReactSelect(
       }
     }
 
-    // 3. Fall back to fuzzy keyword overlap + prefix bonus.
-    if (bestIdx < 0) {
+    // 3. Fall back to fuzzy keyword overlap + prefix bonus — EXCEPT for
+    //    yes/no answers that already failed the polarity check. If we
+    //    wanted "No" but the form has only "Yes, …" variants and no
+    //    "No"/"Not"/"None" option, leave the dropdown blank rather than
+    //    silently picking a Yes. The form may reject for missing field
+    //    but at least we're honest about the answer.
+    if (bestIdx < 0 && !isYesNo) {
       for (const cand of candidates) {
         for (let i = 0; i < optionTexts.length; i++) {
           const t = optionTexts[i];
