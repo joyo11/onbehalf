@@ -25,7 +25,11 @@
         "https://boards.greenhouse.io/*",
         "https://job-boards.greenhouse.io/*"
       ],
-      "js": ["src/content.js"],
+      "js": [
+        "src/fill/dom-surface.js",
+        "src/fill/greenhouse.js",
+        "src/content.js"
+      ],
       "run_at": "document_idle"
     }
   ],

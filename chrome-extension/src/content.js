@@ -30,7 +30,7 @@ if (!window[ONBEHALF_MARKER]) {
   // eslint-disable-next-line no-console
   console.log("[Onbehalf] content script loaded — form detected:", looksLikeJobForm());
 
-  // Respond to background pings.
+  // Respond to background pings and fill commands.
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === "PING") {
       sendResponse({
@@ -40,6 +40,18 @@ if (!window[ONBEHALF_MARKER]) {
         looksLikeForm: looksLikeJobForm(),
       });
       return false;
+    }
+    if (msg?.type === "FILL_GREENHOUSE") {
+      const fill = window.__onbehalfFillGreenhouse;
+      if (!fill) {
+        sendResponse({ ok: false, error: "filler not loaded" });
+        return false;
+      }
+      fill(msg.profile).then(
+        (result) => sendResponse({ ok: true, result }),
+        (err) => sendResponse({ ok: false, error: err?.message ?? "fill threw" }),
+      );
+      return true; // async
     }
     return false;
   });
