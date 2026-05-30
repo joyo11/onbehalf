@@ -1,23 +1,30 @@
 /**
- * Onbehalf popup — Phase 2 scaffold.
+ * Onbehalf popup driver — Phase 4 wired to the real endpoints.
  *
- * On open:
- *   1. Ask background for the user's auth state (WHOAMI hits
- *      /api/extension/whoami on the server)
- *   2. Show signed-in or signed-out state
- *   3. If signed-in, ask the current tab's content script whether
- *      it looks like a job application form
+ * State machine:
+ *   loading → signed-out                            (no Clerk cookie)
+ *   loading → no-match                              (no queued job for this URL)
+ *   loading → ready-to-fill                         (job + profile loaded)
+ *   ready-to-fill → filled                          (after FILL_GREENHOUSE)
+ *   filled → done                                   (user approved + extension clicked Submit)
+ *   any state → error                               (anything threw)
  *
- * Both endpoints will be built in Phase 4. For now the popup
- * gracefully degrades when they 404.
+ * The actual fill click happens in the extension by directly clicking
+ * the page's Submit button — no server-side browser at all.
  */
 
 const $ = (id) => document.getElementById(id);
+const STATES = ["state-loading", "state-signed-out", "state-no-match", "state-ready-to-fill", "state-filled", "state-error"];
 
 function show(state) {
-  for (const s of ["state-loading", "state-signed-out", "state-signed-in"]) {
+  for (const s of STATES) {
     $(s).classList.toggle("hidden", s !== state);
   }
+}
+
+function setError(text) {
+  $("error-text").textContent = text;
+  show("state-error");
 }
 
 async function send(msg) {
@@ -31,47 +38,127 @@ async function getActiveTab() {
   return tabs[0];
 }
 
+async function tellTab(tab, msg) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tab.id, msg, (resp) => resolve(resp ?? { ok: false }));
+  });
+}
+
+let cachedJob = null;
+let cachedTabId = null;
+
 async function init() {
   show("state-loading");
 
   const who = await send({ type: "WHOAMI" });
-  // Server endpoint isn't built yet — treat 404 the same as signed-out
-  // for now so the popup is usable in Phase 2.
-  const isSignedIn = who?.ok && who.body?.signedIn === true;
-  const email = who?.body?.email;
-
-  if (!isSignedIn) {
+  if (!who?.ok || !who.body?.signedIn) {
     show("state-signed-out");
     $("open-sign-in").onclick = () => send({ type: "OPEN_SIGN_IN" });
     return;
   }
 
-  $("account-email").textContent = email ?? "signed in";
-
   const tab = await getActiveTab();
-  if (tab?.id) {
-    chrome.tabs.sendMessage(tab.id, { type: "PING" }, (resp) => {
-      if (chrome.runtime.lastError || !resp) {
-        $("page-status").textContent = "Not on a supported form";
-      } else if (resp.looksLikeForm) {
-        $("page-status").textContent = `${resp.title.slice(0, 60)} · ready`;
-      } else {
-        $("page-status").textContent = "Greenhouse page (no form here)";
-      }
-    });
+  cachedTabId = tab?.id ?? null;
+
+  // Ask the server: is there a queued application matching this URL?
+  const nextJob = await send({ type: "NEXT_JOB_FOR_URL", url: tab?.url ?? "" });
+  if (!nextJob?.ok) {
+    setError("Couldn't reach the server. Check your connection.");
+    return;
   }
 
-  $("open-dashboard").onclick = async () => {
-    const tabs = await chrome.tabs.query({});
-    const existing = tabs.find((t) => t.url?.includes("onbehalfai.vercel.app"));
-    if (existing) {
-      chrome.tabs.update(existing.id, { active: true });
-    } else {
-      chrome.tabs.create({ url: "https://onbehalfai.vercel.app/dashboard" });
-    }
-  };
+  if (!nextJob.body?.match) {
+    $("no-match-email").textContent = who.body.email ?? "signed in";
+    $("no-match-status").textContent =
+      nextJob.body?.message ?? "No queued application for this page.";
+    show("state-no-match");
+    $("open-dashboard-2").onclick = openDashboard;
+    return;
+  }
 
-  show("state-signed-in");
+  cachedJob = nextJob.body;
+  $("ready-job-title").textContent = cachedJob.application.title;
+  $("ready-job-company").textContent = cachedJob.application.company;
+  show("state-ready-to-fill");
+  $("run-fill").onclick = runFill;
 }
 
-init();
+async function runFill() {
+  if (!cachedJob || cachedTabId == null) return;
+  show("state-loading");
+
+  const tab = { id: cachedTabId };
+  const resp = await tellTab(tab, {
+    type: "FILL_GREENHOUSE",
+    profile: {
+      firstName: cachedJob.profile.firstName,
+      lastName: cachedJob.profile.lastName,
+      email: cachedJob.profile.email,
+      phone: cachedJob.profile.phone,
+      resume: cachedJob.resume,
+      coverLetter: cachedJob.coverLetter,
+    },
+  });
+
+  if (!resp?.ok || !resp.result) {
+    setError(resp?.error ?? "Fill failed.");
+    return;
+  }
+
+  $("filled-list").innerHTML = "";
+  for (const f of resp.result.filled) {
+    const li = document.createElement("li");
+    li.textContent = `${f.field}: ${String(f.value).slice(0, 40)}`;
+    $("filled-list").appendChild(li);
+  }
+  $("skipped-line").textContent =
+    resp.result.skipped.length > 0
+      ? `Skipped: ${resp.result.skipped.join(", ")}`
+      : "All known fields filled.";
+
+  show("state-filled");
+  $("approve-submit").onclick = () => clickSubmit(tab, resp.result.submitButtonFound);
+  $("cancel-fill").onclick = () => window.close();
+}
+
+async function clickSubmit(tab, hasSubmit) {
+  if (!hasSubmit) {
+    setError("Couldn't locate the Submit button on this page.");
+    return;
+  }
+  // Execute a tiny script in the tab to click the submit button.
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const sel = [
+        "button[type='submit']",
+        "input[type='submit']",
+        "button[aria-label*='submit' i]",
+      ];
+      for (const s of sel) {
+        const candidates = Array.from(document.querySelectorAll(s));
+        for (const el of candidates) {
+          const r = el.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0) {
+            el.click();
+            return true;
+          }
+        }
+      }
+      return false;
+    },
+  });
+  window.close();
+}
+
+async function openDashboard() {
+  const tabs = await chrome.tabs.query({});
+  const existing = tabs.find((t) => t.url?.includes("onbehalfai.vercel.app"));
+  if (existing) {
+    chrome.tabs.update(existing.id, { active: true });
+  } else {
+    chrome.tabs.create({ url: "https://onbehalfai.vercel.app/dashboard" });
+  }
+}
+
+init().catch((e) => setError(e?.message ?? "Popup init threw."));

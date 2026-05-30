@@ -20,18 +20,36 @@
       <button id="open-sign-in" class="primary">Open Onbehalf</button>
     </main>
 
-    <main id="state-signed-in" class="hidden">
+    <main id="state-no-match" class="hidden">
       <div class="account">
         <p class="muted">Signed in as</p>
-        <p id="account-email"></p>
+        <p id="no-match-email"></p>
       </div>
+      <p class="muted">Current tab</p>
+      <p id="no-match-status">—</p>
+      <button id="open-dashboard-2" class="primary">Open dashboard</button>
+    </main>
 
-      <div class="page-state">
-        <p class="muted">Current tab</p>
-        <p id="page-status">—</p>
+    <main id="state-ready-to-fill" class="hidden">
+      <div class="account">
+        <p class="muted">Queued application</p>
+        <p id="ready-job-title"></p>
+        <p id="ready-job-company" class="muted"></p>
       </div>
+      <button id="run-fill" class="primary">Fill this form</button>
+    </main>
 
-      <button id="open-dashboard" class="primary">Open dashboard</button>
+    <main id="state-filled" class="hidden">
+      <p class="muted">Filled</p>
+      <ul id="filled-list"></ul>
+      <p class="muted" id="skipped-line"></p>
+      <button id="approve-submit" class="primary">Approve & Submit</button>
+      <button id="cancel-fill" class="secondary">Don't submit</button>
+    </main>
+
+    <main id="state-error" class="hidden">
+      <p id="error-text"></p>
+      <button id="retry" class="secondary">Try again</button>
     </main>
 
     <footer>
