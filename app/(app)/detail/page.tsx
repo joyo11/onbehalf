@@ -507,24 +507,19 @@ function NeedsHumanCard({
       <p
         className="font-display font-bold text-ink leading-tight"
         style={{ fontSize: "1.3rem", letterSpacing: "-0.01em" }}
+        title={`reason: ${reason}${botBlockSignal ? ` · signal: ${botBlockSignal}` : ""}`}
       >
         {isBotBlocked
           ? "This board is blocking automation — finish manually."
           : reason === "low_confidence" || reason === "abstained_required"
-            ? "I filled what I'm sure of. Need your eyes on the rest."
+            ? lowFields.length > 0
+              ? `I filled what I'm sure of. Need your eyes on ${lowFields.length} field${lowFields.length === 1 ? "" : "s"}.`
+              : "I filled what I'm sure of. Need your eyes on the rest."
             : reason === "submit_disabled"
-              ? "Demo mode — submit click is disabled by env flag."
+              ? "Demo mode is on — your env flag is keeping me from clicking Submit."
               : reason === "no_submit_button"
                 ? "I couldn't find the Submit button on this page."
                 : "Review and approve to send."}
-      </p>
-      <p className="text-[13px] text-ink-mute mt-2 leading-relaxed">
-        Reason: <code className="font-mono text-[12px] bg-white border border-amber-200 px-1.5 py-0.5 rounded">{reason}</code>
-        {botBlockSignal && (
-          <>
-            {" "}signal: <code className="font-mono text-[12px] bg-white border border-amber-200 px-1.5 py-0.5 rounded">{botBlockSignal}</code>
-          </>
-        )}
       </p>
 
       {lowFields.length > 0 && (
@@ -624,14 +619,14 @@ function NeedsHumanCard({
           rel="noreferrer"
           className="inline-flex items-center gap-2 rounded-full bg-white hover:bg-sand-50 border border-sand-200 text-ink text-[14px] font-semibold px-5 py-2.5 transition-colors"
         >
-          Apply directly instead <Ic.ext className="h-3.5 w-3.5" />
+          Open the company&apos;s form (starts blank) <Ic.ext className="h-3.5 w-3.5" />
         </a>
       </div>
 
       <p className="mt-3 text-[11.5px] text-ink-faint leading-relaxed">
         {isBotBlocked
-          ? "This company's form actively blocks automation, so I can't finish it for you. Use the link above to submit by hand."
-          : "Approve & Submit re-opens the form in a fresh browser session and finishes the submit click for you. Apply directly opens the company's form on its own — the fields I filled live in a server-side browser session that's already closed, so you'd be starting from a blank form."}
+          ? "This company's form actively blocks automation. Use the link above to submit by hand."
+          : "Approve & Submit re-opens the form for me to finish. Opening the company's form yourself gives you a fresh, empty form on their site — what I filled lives in my own browser session and won't carry over."}
       </p>
 
       {approveError && (

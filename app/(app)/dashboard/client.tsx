@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { Ic } from "@/components/ob/icons";
 import {
   brandFor,
@@ -37,7 +36,6 @@ type Props = {
 
 export default function DashboardClient({ firstName, stats, recent, gmailConnected }: Props) {
   const hasData = stats.sentAllTime > 0;
-  const [mode, setMode] = useState<"empty" | "active">(hasData ? "active" : "empty");
 
   return (
     <div className="max-w-[1180px] mx-auto px-5 sm:px-9 py-7 sm:py-9">
@@ -50,7 +48,9 @@ export default function DashboardClient({ firstName, stats, recent, gmailConnect
             {greeting()}, {firstName}.
           </h1>
           <p className="mt-2.5 text-[15px] sm:text-[16px] text-ink-mute">
-            Here&apos;s what your agent has been up to.
+            {hasData
+              ? "Here's what your agent has been up to."
+              : "Let's find a job and apply to it together."}
           </p>
         </div>
         <Link
@@ -58,30 +58,13 @@ export default function DashboardClient({ firstName, stats, recent, gmailConnect
           className="sm:shrink-0 inline-flex items-center justify-center gap-2.5 rounded-full bg-teal-500 hover:bg-teal-600 text-white font-semibold text-[15px] px-5 py-3 whitespace-nowrap transition-colors ob-card-shadow w-full sm:w-auto"
         >
           <Ic.search className="h-[18px] w-[18px]" />
-          New search
+          {hasData ? "New search" : "Find a job"}
         </Link>
       </div>
 
-      {hasData && (
-        <div className="mt-6 inline-flex items-center gap-1 rounded-full bg-white border border-sand-200 p-1 ob-card-shadow">
-          {(["empty", "active"] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setMode(v)}
-              className={
-                "px-4 py-1.5 rounded-full text-[13px] font-semibold whitespace-nowrap transition-colors " +
-                (mode === v ? "bg-ink text-white" : "text-ink-mute hover:text-ink")
-              }
-            >
-              {v === "empty" ? "Empty state" : "Active state"}
-            </button>
-          ))}
-        </div>
-      )}
-
       <div className="mt-7 grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
-        <div key={mode}>
-          {mode === "empty" ? <EmptyState /> : <ActiveState stats={stats} recent={recent} />}
+        <div>
+          {hasData ? <ActiveState stats={stats} recent={recent} /> : <EmptyState />}
         </div>
 
         <div className="space-y-5">
