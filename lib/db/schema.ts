@@ -148,6 +148,15 @@ export const profile = pgTable("profile", {
   eeoRaceEthnicity: text("eeo_race_ethnicity").notNull().default("decline"),
   eeoVeteranStatus: text("eeo_veteran_status").notNull().default("decline"),
   eeoDisabilityStatus: text("eeo_disability_status").notNull().default("decline"),
+  eeoSexualOrientation: text("eeo_sexual_orientation").notNull().default("decline"),
+
+  // Current / most recent employer — many forms ask explicitly
+  currentCompany: text("current_company"),
+  currentJobTitle: text("current_job_title"),
+  // Distinct from needsSponsorship — "are you currently authorized" is the
+  // present-tense question (Yes for F-1 OPT, H1B, US citizens; No only for
+  // candidates with no work authorization). Defaults true.
+  currentlyAuthorizedUS: boolean("currently_authorized_us").notNull().default(true),
 
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

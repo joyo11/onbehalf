@@ -21,6 +21,10 @@ export type SubmissionProfile = {
   eeoRaceEthnicity: string;
   eeoVeteranStatus: string;
   eeoDisabilityStatus: string;
+  eeoSexualOrientation: string;
+  currentCompany: string | null;
+  currentJobTitle: string | null;
+  currentlyAuthorizedUS: boolean;
   skillYears: Record<string, number | null>;
   voiceSample: string | null;
   resumePdfBytes: Buffer | null;

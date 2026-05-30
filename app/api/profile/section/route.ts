@@ -50,6 +50,11 @@ const ALLOWED = new Set<string>([
   "eeoRaceEthnicity",
   "eeoVeteranStatus",
   "eeoDisabilityStatus",
+  "eeoSexualOrientation",
+  // Current employer + present-tense work authorization
+  "currentCompany",
+  "currentJobTitle",
+  "currentlyAuthorizedUS",
 ]);
 
 /**

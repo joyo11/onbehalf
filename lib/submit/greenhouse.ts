@@ -58,6 +58,17 @@ export async function fillGreenhouseForm(
   // validates to fail at the very last step.
   await checkAcknowledgmentBoxes(page, steps);
 
+  // Smart "I agree" SELECTs — Reddit uses a SELECT dropdown for the
+  // privacy policy acknowledgment instead of a checkbox. Find any visible
+  // SELECT or React-Select whose options include "I agree" / "Yes" and
+  // pick it.
+  await answerAgreementSelects(page, steps);
+
+  // Smart N/A fallback — any required text input still empty at this
+  // point gets "N/A". Form refuses to submit on empty required fields,
+  // and "N/A" is universally accepted for "miscellaneous required" text.
+  await fillEmptyRequiredTextInputs(page, steps);
+
   // ── Submit button ─────────────────────────────────────────
   await page.waitForTimeout(200);
   const submitSelectors = [
@@ -410,6 +421,13 @@ const profileMap: Array<{
       return "do not need a company to sponsor"; // matches "…and do not need a company to sponsor my visa"
     },
   },
+  // "Are you currently authorized to work in the U.S.?" — distinct from
+  // future sponsorship. Defaults Yes for anyone with F-1 OPT, H1B, US
+  // citizens, PRs. Almost no one applies without current authorization.
+  {
+    match: /currently authori[sz]ed to work|legally authori[sz]ed to work|presently authori[sz]ed|authori[sz]ed to work in (?:the )?(?:US|U\.S\.|United States)/i,
+    get: (p) => (p.currentlyAuthorizedUS ? "Yes" : "No"),
+  },
   // Visa / sponsorship — short Yes/No
   {
     match: /sponsor|visa|require visa/i,
@@ -448,10 +466,37 @@ const profileMap: Array<{
     match: /accessibility|accommodation|adjustment.*(?:hiring|interview)|adjustments we can make/i,
     get: (p) => p.accommodationsNeeded ?? "None at this time.",
   },
+  // Current / most recent company + job title
+  {
+    match: /current (?:or most recent )?(?:company|employer)|name of your current|most recent company|where (?:do |are )you currently (?:work|employed)/i,
+    get: (p) => p.currentCompany ?? "Independent",
+  },
+  {
+    match: /current (?:or most recent )?(?:job title|role|position)|what (?:is|'s) your current title|most recent title/i,
+    get: (p) => p.currentJobTitle ?? "Software Engineer",
+  },
+  // "How did you hear about this job/role?" — always LinkedIn. It's the
+  // single most plausible answer and exists as an option on essentially
+  // every form. Stops the agent from picking random options.
+  {
+    match: /how did you (?:first )?hear|where did you (?:first )?hear|how (?:did you|do you) find (?:out about )?(?:this|the) (?:role|job|position|opportunity)|how (?:did you |do you )?learn about/i,
+    get: () => "LinkedIn",
+  },
+  // Privacy policy "I agree" SELECT (Reddit-style). Not a checkbox — a
+  // SELECT dropdown whose options are usually "I agree" / "I do not agree"
+  // OR "Yes" / "No". Always pick the agreement.
+  {
+    match: /\bi agree\b|privacy (?:policy|notice).*(?:agree|accept|consent)|consent to (?:the |our )?(?:privacy|terms)|understand.*(?:will be processed|in accordance|privacy policy)/i,
+    get: () => "I agree",
+  },
   // EEO
   {
-    match: /^gender$|gender identity/i,
+    match: /^gender$|gender identity|what gender/i,
     get: (p) => mapEeoToOption(p.eeoGender, "gender"),
+  },
+  {
+    match: /sexual orientation|orientation do you/i,
+    get: (p) => mapEeoToOption(p.eeoSexualOrientation, "sexual_orientation"),
   },
   {
     match: /hispanic|latino|latin[oa]/i,
@@ -543,16 +588,93 @@ async function checkAcknowledgmentBoxes(page: Page, steps: SubmissionStep[]): Pr
   }
 }
 
+/**
+ * Reddit-style: privacy policy "I agree" is a SELECT dropdown, not a
+ * checkbox. Find any visible SELECT or React-Select whose options
+ * include 'I agree' and pick it.
+ */
+async function answerAgreementSelects(page: Page, steps: SubmissionStep[]): Promise<void> {
+  // Native <select> first.
+  const selects = await page.locator("select").all();
+  for (const sel of selects) {
+    try {
+      if (!(await sel.isVisible().catch(() => false))) continue;
+      const currentVal = await sel.evaluate((el) => (el as HTMLSelectElement).value).catch(() => "");
+      if (currentVal) continue; // already answered
+
+      const options = await sel.locator("option").all();
+      let agreementVal: string | null = null;
+      for (const opt of options) {
+        const text = ((await opt.textContent().catch(() => "")) ?? "").trim();
+        const val = (await opt.getAttribute("value").catch(() => "")) ?? "";
+        if (!val) continue;
+        if (/\bi agree\b|^yes\b/i.test(text)) {
+          agreementVal = val;
+          break;
+        }
+      }
+      if (agreementVal) {
+        await sel.selectOption(agreementVal).catch(() => {});
+        steps.push({ step: "selected_agreement", detail: "native select → I agree", ok: true });
+      }
+    } catch {
+      // skip
+    }
+  }
+}
+
+/**
+ * Final pass — any visible required text input still empty gets "N/A".
+ * Form refuses to submit on empty required fields, and "N/A" is the
+ * universal "I don't have a real answer for this miscellaneous question"
+ * sentinel. Only applies to single-line inputs, NEVER textareas (won't
+ * fabricate essays).
+ */
+async function fillEmptyRequiredTextInputs(page: Page, steps: SubmissionStep[]): Promise<void> {
+  const inputs = await page
+    .locator("input[required][type='text'], input[required]:not([type])")
+    .all();
+  let filled = 0;
+  for (const inp of inputs) {
+    try {
+      if (!(await inp.isVisible().catch(() => false))) continue;
+      const val = await inp.evaluate((el) => (el as HTMLInputElement).value).catch(() => "");
+      if (val && val.trim().length > 0) continue;
+      // Skip file inputs and obvious system fields
+      const type = (await inp.getAttribute("type").catch(() => "")) ?? "text";
+      if (type === "file") continue;
+      await inp.fill("N/A", { timeout: 2000 });
+      filled++;
+    } catch {
+      // skip
+    }
+  }
+  if (filled > 0) {
+    steps.push({ step: "filled_na_fallback", detail: String(filled) + " empty required inputs", ok: true });
+  }
+}
+
 function isUrl(s: string | null | undefined): s is string {
   if (!s) return false;
   return /^https?:\/\/|^[a-z0-9-]+\.[a-z]{2,}/.test(s.toLowerCase().trim());
 }
 
-function mapEeoToOption(value: string, kind: "gender" | "hispanic" | "race" | "veteran" | "disability"): string {
+function mapEeoToOption(value: string, kind: "gender" | "hispanic" | "race" | "veteran" | "disability" | "sexual_orientation"): string {
   if (value === "decline") {
     if (kind === "disability") return "I do not wish to answer";
     if (kind === "veteran") return "I don't wish to answer";
+    if (kind === "sexual_orientation") return "I don't wish to answer";
     return "Decline to self-identify";
+  }
+  if (kind === "sexual_orientation") {
+    if (value === "straight") return "Heterosexual";
+    if (value === "gay") return "Gay";
+    if (value === "lesbian") return "Lesbian";
+    if (value === "bisexual") return "Bisexual";
+    if (value === "queer") return "Queer";
+    if (value === "asexual") return "Asexual";
+    if (value === "pansexual") return "Pansexual";
+    if (value === "other") return "Other";
   }
   // Translate our internal codes to the phrasing forms actually use.
   // Forms have 'Male' / 'Female' but users pick 'Man' / 'Woman' in Settings,
@@ -837,6 +959,30 @@ async function fillReactSelect(
         bestIdx = exact;
         bestScore = 999;
         break;
+      }
+    }
+
+    // 1.5. Negation-aware preference. When the answer contains "not a" or
+    //      "I am not" or starts with "No,", strongly prefer options that
+    //      ALSO begin with negation. This stops "I am not a protected
+    //      veteran" from accidentally matching "Other Protected Veteran"
+    //      via fuzzy keyword overlap.
+    if (bestIdx < 0 && /\b(?:not (?:a |an )?|i am not|i'm not|no,|no\.)\b/i.test(answer)) {
+      let negIdx = -1;
+      let negLen = Number.MAX_SAFE_INTEGER;
+      for (let i = 0; i < optionTexts.length; i++) {
+        const t = optionTexts[i].trim().toLowerCase();
+        if (!t) continue;
+        if (/\b(?:not (?:a |an )?|i am not|i'm not|^no\b|^no,)/.test(t)) {
+          if (t.length < negLen) {
+            negLen = t.length;
+            negIdx = i;
+          }
+        }
+      }
+      if (negIdx >= 0) {
+        bestIdx = negIdx;
+        bestScore = 999;
       }
     }
 

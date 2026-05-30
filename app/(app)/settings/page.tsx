@@ -52,6 +52,10 @@ export default async function SettingsPage() {
         eeoRaceEthnicity: profile.eeoRaceEthnicity,
         eeoVeteranStatus: profile.eeoVeteranStatus,
         eeoDisabilityStatus: profile.eeoDisabilityStatus,
+        eeoSexualOrientation: profile.eeoSexualOrientation,
+        currentCompany: profile.currentCompany,
+        currentJobTitle: profile.currentJobTitle,
+        currentlyAuthorizedUS: profile.currentlyAuthorizedUS,
         resumeFileName: profile.resumeFileName,
       })
       .from(profile)
@@ -102,6 +106,10 @@ export default async function SettingsPage() {
       eeoRaceEthnicity: p?.eeoRaceEthnicity ?? "decline",
       eeoVeteranStatus: p?.eeoVeteranStatus ?? "decline",
       eeoDisabilityStatus: p?.eeoDisabilityStatus ?? "decline",
+      eeoSexualOrientation: p?.eeoSexualOrientation ?? "decline",
+      currentCompany: p?.currentCompany ?? "",
+      currentJobTitle: p?.currentJobTitle ?? "",
+      currentlyAuthorizedUS: p?.currentlyAuthorizedUS ?? true,
       resumeFileName: p?.resumeFileName ?? null,
     },
   };

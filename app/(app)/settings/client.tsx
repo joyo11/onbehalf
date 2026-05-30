@@ -36,6 +36,10 @@ export type SettingsData = {
     eeoRaceEthnicity: string;
     eeoVeteranStatus: string;
     eeoDisabilityStatus: string;
+    eeoSexualOrientation: string;
+    currentCompany: string;
+    currentJobTitle: string;
+    currentlyAuthorizedUS: boolean;
     resumeFileName: string | null;
   };
 };
@@ -212,6 +216,7 @@ function CareerSection({ initial }: { initial: SettingsData["profile"] }) {
 /* ─── Work eligibility ──────────────────────────────────────── */
 function EligibilitySection({ initial }: { initial: SettingsData["profile"] }) {
   const [workAuth, setWorkAuth] = useState<string | null>(initial.workAuthorization);
+  const [currentlyAuthorizedUS, setCurrentlyAuthorizedUS] = useState<boolean>(initial.currentlyAuthorizedUS);
   const [needsSponsorship, setNeedsSponsorship] = useState<boolean>(initial.needsSponsorship ?? false);
   const [restrictions, setRestrictions] = useState<boolean>(initial.employmentRestrictions);
   const [previouslyWorked, setPreviouslyWorked] = useState<boolean>(initial.previouslyWorkedHere);
@@ -225,6 +230,7 @@ function EligibilitySection({ initial }: { initial: SettingsData["profile"] }) {
       onSave={() =>
         saveSection({
           workAuthorization: workAuth,
+          currentlyAuthorizedUS,
           needsSponsorship,
           employmentRestrictions: restrictions,
           previouslyWorkedHere: previouslyWorked,
@@ -235,6 +241,11 @@ function EligibilitySection({ initial }: { initial: SettingsData["profile"] }) {
       }
     >
       <Stack>
+        <Toggle
+          label="I am currently authorized to work in the U.S."
+          value={currentlyAuthorizedUS}
+          onChange={setCurrentlyAuthorizedUS}
+        />
         <FieldLabel>Work authorization</FieldLabel>
         <PillRow
           options={[
@@ -338,12 +349,25 @@ const DISABILITY_OPTIONS = [
   { value: "no", label: "No, I don't have a disability" },
 ];
 
+const SEXUAL_ORIENTATION_OPTIONS = [
+  { value: "decline", label: "Decline to answer" },
+  { value: "straight", label: "Heterosexual / Straight" },
+  { value: "gay", label: "Gay" },
+  { value: "lesbian", label: "Lesbian" },
+  { value: "bisexual", label: "Bisexual" },
+  { value: "queer", label: "Queer" },
+  { value: "asexual", label: "Asexual" },
+  { value: "pansexual", label: "Pansexual" },
+  { value: "other", label: "Other" },
+];
+
 function EEOSection({ initial }: { initial: SettingsData["profile"] }) {
   const [gender, setGender] = useState(initial.eeoGender || EEO_DECLINE);
   const [hispanic, setHispanic] = useState(initial.eeoHispanicLatino || EEO_DECLINE);
   const [race, setRace] = useState(initial.eeoRaceEthnicity || EEO_DECLINE);
   const [veteran, setVeteran] = useState(initial.eeoVeteranStatus || EEO_DECLINE);
   const [disability, setDisability] = useState(initial.eeoDisabilityStatus || EEO_DECLINE);
+  const [sexualOrientation, setSexualOrientation] = useState(initial.eeoSexualOrientation || EEO_DECLINE);
 
   return (
     <Section
@@ -356,6 +380,7 @@ function EEOSection({ initial }: { initial: SettingsData["profile"] }) {
           eeoRaceEthnicity: race,
           eeoVeteranStatus: veteran,
           eeoDisabilityStatus: disability,
+          eeoSexualOrientation: sexualOrientation,
         })
       }
     >
@@ -363,6 +388,12 @@ function EEOSection({ initial }: { initial: SettingsData["profile"] }) {
         <SelectField label="Gender" options={GENDER_OPTIONS} value={gender} onChange={setGender} />
         <SelectField label="Hispanic or Latino" options={YESNO_OPTIONS} value={hispanic} onChange={setHispanic} />
         <SelectField label="Race / Ethnicity" options={RACE_OPTIONS} value={race} onChange={setRace} />
+        <SelectField
+          label="Sexual orientation"
+          options={SEXUAL_ORIENTATION_OPTIONS}
+          value={sexualOrientation}
+          onChange={setSexualOrientation}
+        />
         <SelectField label="Veteran status" options={VETERAN_OPTIONS} value={veteran} onChange={setVeteran} />
         <SelectField label="Disability status" options={DISABILITY_OPTIONS} value={disability} onChange={setDisability} />
       </Stack>

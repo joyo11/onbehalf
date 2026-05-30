@@ -250,6 +250,10 @@ export async function runSubmission(
     eeoRaceEthnicity: row.profileRow.eeoRaceEthnicity ?? "decline",
     eeoVeteranStatus: row.profileRow.eeoVeteranStatus ?? "decline",
     eeoDisabilityStatus: row.profileRow.eeoDisabilityStatus ?? "decline",
+    eeoSexualOrientation: row.profileRow.eeoSexualOrientation ?? "decline",
+    currentCompany: row.profileRow.currentCompany ?? null,
+    currentJobTitle: row.profileRow.currentJobTitle ?? null,
+    currentlyAuthorizedUS: row.profileRow.currentlyAuthorizedUS ?? true,
     skillYears: (row.profileRow.skillYears as Record<string, number | null>) ?? {},
     voiceSample: row.profileRow.voiceSample,
     resumePdfBytes: row.profileRow.resumePdf
