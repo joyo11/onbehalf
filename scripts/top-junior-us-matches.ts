@@ -40,9 +40,9 @@ async function main() {
   // Build the same filter set findMatchingJobs builds. Hard-restrict to
   // greenhouse + active + has-embedding.
   const conds: ReturnType<typeof ilike>[] = [
-    sql`${job.is_active ?? job.isActive} = true` as ReturnType<typeof ilike>,
-    eq(job.source, "greenhouse"),
-    isNotNull(job.jdEmbedding),
+    eq(job.isActive, true) as ReturnType<typeof ilike>,
+    eq(job.source, "greenhouse") as ReturnType<typeof ilike>,
+    isNotNull(job.jdEmbedding) as ReturnType<typeof ilike>,
   ];
 
   // Role keyword OR
