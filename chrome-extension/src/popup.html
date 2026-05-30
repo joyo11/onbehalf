@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Onbehalf</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <div class="logo">O</div>
+      <h1>Onbehalf</h1>
+    </header>
+
+    <main id="state-loading" class="hidden">
+      <p class="muted">Loading…</p>
+    </main>
+
+    <main id="state-signed-out" class="hidden">
+      <p>Sign in on the web to connect this extension.</p>
+      <button id="open-sign-in" class="primary">Open Onbehalf</button>
+    </main>
+
+    <main id="state-signed-in" class="hidden">
+      <div class="account">
+        <p class="muted">Signed in as</p>
+        <p id="account-email"></p>
+      </div>
+
+      <div class="page-state">
+        <p class="muted">Current tab</p>
+        <p id="page-status">—</p>
+      </div>
+
+      <button id="open-dashboard" class="primary">Open dashboard</button>
+    </main>
+
+    <footer>
+      <span class="muted">v0.1.0</span>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
