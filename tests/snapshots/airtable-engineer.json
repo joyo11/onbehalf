@@ -1,0 +1,62 @@
+{
+  "url": "https://boards.greenhouse.io/airtable/jobs/8124953002",
+  "detectedCount": 9,
+  "missedCount": 0,
+  "detected": [
+    {
+      "tag": "input",
+      "name": null,
+      "id": "question_35920907002",
+      "label": "Are you currently located near, or planning to relocate near, one of our office locations (SF, NYC, or ATX), and able to work from the office twice per week?*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "email",
+      "label": "Email*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "first_name",
+      "label": "First Name*"
+    },
+    {
+      "tag": "textarea",
+      "name": null,
+      "id": "question_35920910002",
+      "label": "How are you using AI today in your current role? If applicable, show us your last AI experiment.*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "question_35920911002",
+      "label": "How many years of full-time work experience do you have after graduation?*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "last_name",
+      "label": "Last Name*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "question_35920908002",
+      "label": "Please share a few reasons why you’re excited to apply for this role at Airtable.*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "question_33111824002",
+      "label": "Who is your current employer?*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "question_35920906002",
+      "label": "Will you now, or in the future, require visa sponsorship?*"
+    }
+  ],
+  "missed": []
+}

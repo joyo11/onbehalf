@@ -1,0 +1,20 @@
+{
+  "url": "https://jobs.lever.co/mistral/0004f890-99d5-47c5-bb67-8f3f76a1e08f/apply",
+  "detectedCount": 2,
+  "missedCount": 0,
+  "detected": [
+    {
+      "tag": "input",
+      "name": "name",
+      "id": null,
+      "label": "Full name✱"
+    },
+    {
+      "tag": "input",
+      "name": "urls[LinkedIn]",
+      "id": null,
+      "label": "LinkedIn URL✱"
+    }
+  ],
+  "missed": []
+}

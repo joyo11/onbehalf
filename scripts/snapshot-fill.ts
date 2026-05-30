@@ -48,13 +48,17 @@ async function captureFormDetection(url: string): Promise<Snapshot> {
   try {
     await session.page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
     await session.page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => {});
-    // Let the React form mount.
+    // Let the React form mount. Cast a wider net for the marker selector
+    // — Ashby boards in particular don't always have first_name/email
+    // mounted within the first 12s, but they always have *some* visible
+    // form input or label.
     await session.page
-      .waitForSelector("input[name='first_name'], input[type='email'], textarea, input[type='file']", {
-        timeout: 12_000,
-      })
+      .waitForSelector(
+        "input[name='first_name'], input[type='email'], input[name*='_systemfield' i], input[name='name'], textarea, input[type='file']",
+        { timeout: 20_000 },
+      )
       .catch(() => {});
-    await session.page.waitForTimeout(1_500);
+    await session.page.waitForTimeout(2_000);
 
     // Pass the body as a string so tsx/esbuild doesn't __name-decorate
     // anything inside it (Playwright's page.evaluate accepts strings).

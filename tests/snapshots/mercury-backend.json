@@ -1,0 +1,44 @@
+{
+  "url": "https://job-boards.greenhouse.io/mercury/jobs/5520964004",
+  "detectedCount": 6,
+  "missedCount": 0,
+  "detected": [
+    {
+      "tag": "input",
+      "name": null,
+      "id": "country",
+      "label": "Country*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "email",
+      "label": "Email*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "first_name",
+      "label": "First Name*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "question_13141500004",
+      "label": "From where do you intend to work?*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "last_name",
+      "label": "Last Name*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "question_13141499004",
+      "label": "Will you now or at any time in the future require visa sponsorship?*"
+    }
+  ],
+  "missed": []
+}
