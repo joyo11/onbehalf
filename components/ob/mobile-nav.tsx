@@ -1,6 +1,6 @@
 "use client";
 
-import { useUser } from "@clerk/nextjs";
+import { SignOutButton, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -143,18 +143,29 @@ export function MobileTopBar() {
           </nav>
 
           {user && (
-            <div className="m-3 mt-2 flex items-center gap-3 rounded-xl2 px-3 py-3 border-t border-panel-line/60">
-              <div className="h-10 w-10 rounded-full bg-teal-500 text-white grid place-items-center font-bold text-[13px]">
-                {initials || "U"}
+            <div className="m-3 mt-2 border-t border-panel-line/60 pt-2">
+              <div className="flex items-center gap-3 rounded-xl2 px-3 py-3">
+                <div className="h-10 w-10 rounded-full bg-teal-500 text-white grid place-items-center font-bold text-[13px]">
+                  {initials || "U"}
+                </div>
+                <div className="leading-tight min-w-0 flex-1">
+                  <p className="font-semibold text-[14px] text-white truncate">
+                    {user.fullName ?? user.firstName ?? "You"}
+                  </p>
+                  <p className="text-[12px] text-panel-dim truncate">
+                    {user.primaryEmailAddress?.emailAddress ?? ""}
+                  </p>
+                </div>
               </div>
-              <div className="leading-tight min-w-0 flex-1">
-                <p className="font-semibold text-[14px] text-white truncate">
-                  {user.fullName ?? user.firstName ?? "You"}
-                </p>
-                <p className="text-[12px] text-panel-dim truncate">
-                  {user.primaryEmailAddress?.emailAddress ?? ""}
-                </p>
-              </div>
+              <SignOutButton redirectUrl="/">
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-3 rounded-xl2 px-3 py-3 text-[14px] font-semibold text-panel-dim hover:text-white hover:bg-panel-hover/60 transition-colors"
+                >
+                  <Ic.signOut className="h-[18px] w-[18px]" />
+                  <span>Sign out</span>
+                </button>
+              </SignOutButton>
             </div>
           )}
         </aside>
