@@ -54,23 +54,39 @@ export async function detectVisibleChallenge(page: Page): Promise<BotBlockResult
     };
   }
 
-  // 3. Cloudflare Turnstile widget visible.
-  const turnstile = await page
-    .locator("iframe[src*='challenges.cloudflare.com']:visible")
+  // 3. Cloudflare Turnstile. Two signals:
+  //    (a) the host element on the parent page (Cloudflare's recommended
+  //        wiring puts a <div class="cf-turnstile"> on the page; we use
+  //        that specific class only — generic [data-sitekey] is shared
+  //        by reCAPTCHA and would false-positive on every Google demo)
+  //    (b) any frame on the page (including nested iframes) whose URL
+  //        points at challenges.cloudflare.com / turnstile.
+  const turnstileHost = await page
+    .locator(".cf-turnstile:visible")
     .count()
     .catch(() => 0);
-  if (turnstile > 0) {
+  if (turnstileHost > 0) {
     return {
       blocked: true,
-      signal: "cloudflare_turnstile",
-      detail: "turnstile widget visible",
+      signal: "cloudflare_turnstile_host",
+      detail: "cf-turnstile host element on parent page",
     };
   }
+  for (const frame of page.frames()) {
+    const fu = frame.url();
+    if (/challenges?\.cloudflare\.com|turnstile/i.test(fu)) {
+      return {
+        blocked: true,
+        signal: "cloudflare_turnstile_frame",
+        detail: fu.slice(0, 200),
+      };
+    }
+  }
 
-  // 4. Text patterns in the rendered body. Scoped to the first ~8K chars
-  //    so we don't scan transitively-loaded analytics blobs.
-  const bodyText = (await page.locator("body").textContent().catch(() => "")) ?? "";
-  const head = bodyText.slice(0, 8000);
+  // 4. Text patterns. The hardest case: a Cloudflare Turnstile renders
+  //    "Verify you are human" *inside* the iframe, which isn't in the
+  //    main document's body.textContent(). So we scan every frame's
+  //    body, not just the main page's.
   const textPatterns: Array<{ name: string; pattern: RegExp }> = [
     { name: "verify_human", pattern: /verify (?:you are )?(?:a )?human/i },
     { name: "complete_captcha", pattern: /please complete the captcha/i },
@@ -80,13 +96,18 @@ export async function detectVisibleChallenge(page: Page): Promise<BotBlockResult
     { name: "are_you_robot", pattern: /are you (?:a )?robot\??/i },
     { name: "access_denied", pattern: /access denied.{0,80}(?:bot|automated)/i },
   ];
-  for (const { name, pattern } of textPatterns) {
-    if (pattern.test(head)) {
-      return {
-        blocked: true,
-        signal: `text_pattern:${name}`,
-        detail: head.match(pattern)?.[0]?.slice(0, 120) ?? null,
-      };
+  for (const frame of page.frames()) {
+    const bodyText = (await frame.locator("body").textContent().catch(() => "")) ?? "";
+    const head = bodyText.slice(0, 8000);
+    if (!head) continue;
+    for (const { name, pattern } of textPatterns) {
+      if (pattern.test(head)) {
+        return {
+          blocked: true,
+          signal: `text_pattern:${name}`,
+          detail: (head.match(pattern)?.[0] ?? "").slice(0, 120),
+        };
+      }
     }
   }
 
