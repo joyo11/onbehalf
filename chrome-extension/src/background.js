@@ -91,41 +91,28 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
-  // Phase 7 — capture screenshot of current tab + ask server for a
-  // vision-based fill plan. payload = { applicationId, dryRun? }
-  if (msg.type === "COMPUTER_USE_PLAN") {
+  // Phase 7 — capture the visible tab as JPEG so the popup can include
+  // it in a direct fetch to /api/extension/computer-use. Lives in
+  // background because chrome.tabs.captureVisibleTab needs the
+  // extension's privileged context. Returns inside ~200ms — well
+  // under the message-port lifetime.
+  if (msg.type === "CAPTURE_TAB") {
     (async () => {
       try {
-        let screenshotBase64 = null;
-        if (!msg.payload?.dryRun) {
-          // captureVisibleTab returns "data:image/jpeg;base64,XXXX"
-          const dataUrl = await chrome.tabs.captureVisibleTab(undefined, {
-            format: "jpeg",
-            quality: 70,
-          });
-          screenshotBase64 = dataUrl.replace(/^data:image\/[^;]+;base64,/, "");
-        }
-        const path = msg.payload?.dryRun
-          ? "/api/extension/computer-use?dryRun=1"
-          : "/api/extension/computer-use";
-        const resp = await api(path, {
-          method: "POST",
-          body: JSON.stringify({
-            applicationId: msg.payload.applicationId,
-            screenshotBase64,
-            dryRun: !!msg.payload.dryRun,
-          }),
+        const dataUrl = await chrome.tabs.captureVisibleTab(undefined, {
+          format: "jpeg",
+          quality: 70,
         });
-        sendResponse(resp);
+        const screenshot = dataUrl.replace(/^data:image\/[^;]+;base64,/, "");
+        sendResponse({ ok: true, body: { screenshot } });
       } catch (e) {
         sendResponse({
           ok: false,
-          status: 0,
-          body: { error: "background screenshot threw", message: e?.message },
+          body: { error: e?.message ?? "captureVisibleTab threw" },
         });
       }
     })();
-    return true; // async
+    return true;
   }
 
   // From content script: report fill result + screenshot back to the

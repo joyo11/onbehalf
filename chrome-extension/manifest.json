@@ -3,7 +3,7 @@
   "name": "Onbehalf",
   "version": "0.1.0",
   "description": "Fills Greenhouse job applications in your own browser. You watch every keystroke. You hit Submit.",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
   "host_permissions": [
     "https://onbehalfai.vercel.app/*",
     "https://*.greenhouse.io/*",

@@ -89,16 +89,56 @@ async function runVisionFill({ dryRun }) {
   if (!cachedJob || cachedTabId == null) return;
   show("state-loading");
 
-  const planResp = await send({
-    type: "COMPUTER_USE_PLAN",
-    payload: { applicationId: cachedJob.application.id, dryRun },
-  });
-  if (!planResp?.ok || !planResp.body?.plan) {
-    setError(planResp?.body?.error ?? "Vision plan failed.");
+  // Bypass the background service worker for this API call. MV3
+  // service workers can close the message port if the round-trip
+  // takes >2-3s, which Vercel cold-starts comfortably do. The popup
+  // shares the same Clerk cookie via credentials: 'include', so
+  // direct fetch works the same way.
+  let screenshotBase64 = null;
+  if (!dryRun) {
+    // For real runs we still need the background to capture the tab
+    // (popup context can't see the underlying page). But this is fast
+    // (<200ms), well within message-port lifetime.
+    const ssResp = await send({ type: "CAPTURE_TAB" });
+    if (!ssResp?.ok) {
+      setError(ssResp?.body?.error ?? "Couldn't capture the page screenshot.");
+      return;
+    }
+    screenshotBase64 = ssResp.body.screenshot;
+  }
+
+  const path = dryRun
+    ? "/api/extension/computer-use?dryRun=1"
+    : "/api/extension/computer-use";
+
+  let planData;
+  try {
+    const res = await fetch(`https://onbehalfai.vercel.app${path}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        applicationId: cachedJob.application.id,
+        screenshotBase64,
+        dryRun,
+      }),
+    });
+    planData = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(planData?.error ?? `Server returned ${res.status}.`);
+      return;
+    }
+  } catch (e) {
+    setError(`Network error: ${e?.message ?? "unknown"}`);
     return;
   }
-  const plan = planResp.body.plan;
-  const cost = planResp.body.tokenCost ?? 0;
+
+  if (!planData?.plan) {
+    setError("Server returned no plan.");
+    return;
+  }
+  const plan = planData.plan;
+  const cost = planData.tokenCost ?? 0;
 
   const tab = { id: cachedTabId };
   const execResp = await tellTab(tab, { type: "EXECUTE_PLAN", plan });
