@@ -274,17 +274,25 @@ export async function findMatchingJobs(q: JobsQuery): Promise<MatchedJob[]> {
     // Format vector as pgvector string literal: [1,2,3,…]
     const vecLiteral = `[${resumeEmbedding.join(",")}]`;
     const baseConds = [isNotNull(job.jdEmbedding), ...conds];
-    const rows = await db
-      .select({
-        row: job,
-        similarity: sql<number>`1 - (${job.jdEmbedding} <=> ${vecLiteral}::vector)`.as(
-          "similarity",
-        ),
-      })
-      .from(job)
-      .where(sql.join(baseConds, sql` AND `))
-      .orderBy(sql`${job.jdEmbedding} <=> ${vecLiteral}::vector`)
-      .limit(limit);
+    // pgvector's HNSW index defaults ef_search to 40 — that puts a hard
+    // cap on how many candidates the ORDER BY can return, regardless of
+    // LIMIT. Bump it to at least 4× the requested limit so the index has
+    // enough breadth to actually fill the LIMIT.
+    const efSearch = Math.max(100, limit * 4);
+    const rows = await db.transaction(async (tx) => {
+      await tx.execute(sql.raw(`SET LOCAL hnsw.ef_search = ${efSearch}`));
+      return tx
+        .select({
+          row: job,
+          similarity: sql<number>`1 - (${job.jdEmbedding} <=> ${vecLiteral}::vector)`.as(
+            "similarity",
+          ),
+        })
+        .from(job)
+        .where(sql.join(baseConds, sql` AND `))
+        .orderBy(sql`${job.jdEmbedding} <=> ${vecLiteral}::vector`)
+        .limit(limit);
+    });
 
     return rows.map(({ row, similarity }) =>
       dbRowToMatchedJob(row, q.roles ?? [], Number(similarity)),
