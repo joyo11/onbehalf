@@ -93,7 +93,10 @@ export async function fillGreenhouseForm(
 
   // ── Walk every labelled field and answer it ───────────────
   await page.waitForTimeout(400);
-  await fillAllLabelledFields(page, profile, steps);
+  const resolverCtx = job
+    ? { profile, jobCtx: job, resolvedFields }
+    : undefined;
+  await fillAllLabelledFields(page, profile, steps, resolverCtx);
 
   // Reddit-style city autocomplete React-Selects need the city name typed
   // before options load. Walk the page for any visible React-Select that
@@ -372,6 +375,11 @@ async function fillAllLabelledFields(
   page: Page,
   profile: SubmissionProfile,
   steps: SubmissionStep[],
+  resolverCtx?: {
+    profile: SubmissionProfile;
+    jobCtx: { company: string; title: string; jdSummary: string };
+    resolvedFields?: ResolvedField[];
+  },
 ): Promise<void> {
   // Build a snapshot of every visible label on the page. We do this once
   // and then iterate, because filling some fields may re-render others.
@@ -397,7 +405,7 @@ async function fillAllLabelledFields(
     if (answer == null) continue;
 
     try {
-      const ok = await fillByLabel(page, labelEl, question, answer, steps);
+      const ok = await fillByLabel(page, labelEl, question, answer, steps, resolverCtx);
       if (!ok) {
         steps.push({
           step: "skipped_unknown_field",
@@ -1002,6 +1010,11 @@ async function fillByLabel(
   question: string,
   answer: string,
   steps: SubmissionStep[],
+  resolverCtx?: {
+    profile: SubmissionProfile;
+    jobCtx: { company: string; title: string; jdSummary: string };
+    resolvedFields?: ResolvedField[];
+  },
 ): Promise<boolean> {
   // Always look at the label's containing block first — we need to know
   // whether the field is a React-Select before we decide how to fill it.
@@ -1020,7 +1033,7 @@ async function fillByLabel(
       )
       .first();
     if ((await rsControl.count()) > 0 && (await rsControl.isVisible().catch(() => false))) {
-      const ok = await fillReactSelect(page, rsControl, answer, question, steps);
+      const ok = await fillReactSelect(page, rsControl, answer, question, steps, resolverCtx);
       if (ok) return true;
     }
   }
@@ -1168,6 +1181,11 @@ export async function fillReactSelect(
   answer: string,
   question: string,
   steps: SubmissionStep[],
+  resolverCtx?: {
+    profile: SubmissionProfile;
+    jobCtx: { company: string; title: string; jdSummary: string };
+    resolvedFields?: ResolvedField[];
+  },
 ): Promise<boolean> {
   const label = question.slice(0, 60);
   try {
@@ -1301,12 +1319,57 @@ export async function fillReactSelect(
       }
     }
 
-    // 3. Fall back to fuzzy keyword overlap + prefix bonus — EXCEPT for
-    //    yes/no answers that already failed the polarity check. If we
-    //    wanted "No" but the form has only "Yes, …" variants and no
-    //    "No"/"Not"/"None" option, leave the dropdown blank rather than
-    //    silently picking a Yes. The form may reject for missing field
-    //    but at least we're honest about the answer.
+    // 3. Phase 2 resolver pass — if the deterministic answer didn't
+    //    exact/polarity/negation-match, let an LLM pick from the actual
+    //    visible options. This kills the hardcoded "LinkedIn" guess
+    //    (LLM now sees ["Job board", "Company website", "Other"] and
+    //    picks accordingly) and stops the fuzzy fallback from
+    //    silently picking the wrong option.
+    if (bestIdx < 0 && resolverCtx) {
+      const { resolveSelectField } = await import("./resolve-field");
+      const resolution = await resolveSelectField({
+        label: question,
+        availableOptions: optionTexts.filter((t) => t.trim().length > 0),
+        profile: resolverCtx.profile,
+        jobCtx: resolverCtx.jobCtx,
+      });
+      resolverCtx.resolvedFields?.push({
+        label: question.slice(0, 200),
+        value: resolution.value,
+        source: resolution.source,
+        confidence: resolution.confidence,
+        reason: resolution.reason,
+      });
+      if (resolution.value) {
+        const matchIdx = optionTexts.findIndex(
+          (t) => t.trim().toLowerCase() === resolution.value!.trim().toLowerCase(),
+        );
+        if (matchIdx >= 0) {
+          bestIdx = matchIdx;
+          bestScore = 999;
+          steps.push({
+            step: "selected_react_option_llm",
+            detail: `${label} → ${optionTexts[matchIdx].slice(0, 40)} (llm)`,
+            ok: true,
+          });
+        }
+      } else {
+        // LLM abstained — surface that. Phase 3's gate will see the
+        // abstain entry in resolvedFields and route to needsHuman.
+        steps.push({
+          step: "abstained_react_select",
+          detail: `${label}: ${resolution.reason.slice(0, 80)}`,
+          ok: false,
+        });
+        await page.keyboard.press("Escape").catch(() => {});
+        return false;
+      }
+    }
+
+    // 4. Legacy fuzzy fallback — only used when we don't have a resolver
+    //    context (e.g. an old call site that hasn't been threaded
+    //    through yet). EXCEPT for yes/no answers that already failed the
+    //    polarity check.
     if (bestIdx < 0 && !isYesNo) {
       for (const cand of candidates) {
         for (let i = 0; i < optionTexts.length; i++) {
