@@ -1,0 +1,80 @@
+{
+  "url": "https://job-boards.greenhouse.io/figma/jobs/5691911004",
+  "detectedCount": 12,
+  "missedCount": 0,
+  "detected": [
+    {
+      "tag": "textarea",
+      "name": null,
+      "id": "question_14492714004",
+      "label": "Additional Information"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "question_14492717004",
+      "label": "Are you authorized to work in the country for which you applied? *"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "country",
+      "label": "Country*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "email",
+      "label": "Email*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "first_name",
+      "label": "First Name*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "question_14492715004",
+      "label": "From where do you intend to work? *"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "question_14492718004",
+      "label": "Have you ever worked for Figma before, as an employee or a contractor/consultant? *"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "question_14492720004",
+      "label": "Have you worked as a full-time software engineer in a professional setting (excluding internships)?*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "question_14492719004",
+      "label": "How many years of professional experience do you have in this type of role (excluding internships)?*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "last_name",
+      "label": "Last Name*"
+    },
+    {
+      "tag": "input",
+      "name": null,
+      "id": "candidate-location",
+      "label": "Location (City)*"
+    },
+    {
+      "tag": "textarea",
+      "name": null,
+      "id": "question_14492712004",
+      "label": "Why do you want to join Figma?*"
+    }
+  ],
+  "missed": []
+}

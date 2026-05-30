@@ -787,8 +787,29 @@ export async function fillEmptyRequiredTextInputs(
   ctx?: SmartFillContext,
   resolvedFields?: ResolvedField[],
 ): Promise<void> {
+  // Phase 2B (snapshot test caught the gap on Figma): native `required`
+  // misses React-validated forms that use `aria-required="true"` + label *
+  // patterns instead. Cast the net wider:
+  //   - native [required]
+  //   - aria-required="true"
+  //   - inside a parent flagged required (.required class or [data-required])
+  //   - ALL visible textareas (the safety net — labelled textareas
+  //     without "required" marking are still almost always meant to be
+  //     filled; the resolver can abstain if the question is unanswerable)
   const inputLocators = await page
-    .locator("input[required][type='text'], input[required]:not([type]), textarea[required]")
+    .locator(
+      [
+        "input[required][type='text']",
+        "input[required]:not([type])",
+        "input[aria-required='true'][type='text']",
+        "input[aria-required='true']:not([type])",
+        "input[type='text'][class*='required' i]",
+        "input:not([type])[class*='required' i]",
+        "textarea[required]",
+        "textarea[aria-required='true']",
+        "textarea", // visible-textarea net — empty ones get smart-filled or abstain
+      ].join(", "),
+    )
     .all();
 
   type Pending = { locator: Locator; field: UnknownField };
