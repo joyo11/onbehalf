@@ -1072,7 +1072,7 @@ async function fillByLabel(
   if (containerExists) {
     const radios = container.locator("input[type='radio']");
     if ((await radios.count()) > 0) {
-      const ok = await fillRadioGroup(page, container, radios, answer, question, steps);
+      const ok = await fillRadioGroup(page, container, radios, answer, question, steps, resolverCtx);
       if (ok) return true;
     }
   }
@@ -1487,27 +1487,118 @@ async function fillRadioGroup(
   answer: string,
   question: string,
   steps: SubmissionStep[],
+  resolverCtx?: {
+    profile: SubmissionProfile;
+    jobCtx: { company: string; title: string; jdSummary: string };
+    resolvedFields?: ResolvedField[];
+  },
 ): Promise<boolean> {
   const label = question.slice(0, 60);
   const count = await radios.count();
-  let bestIdx = -1;
-  let bestScore = 0;
+
+  // Read all radio labels into an array — used both for matching and
+  // for the resolver's available-options list.
+  const optionTexts: string[] = [];
   for (let i = 0; i < count; i++) {
     const r = radios.nth(i);
     const id = await r.getAttribute("id").catch(() => null);
     const text = id
       ? ((await page.locator(`label[for='${cssEscape(id)}']`).first().textContent().catch(() => "")) ?? "")
       : ((await r.locator("xpath=..").textContent().catch(() => "")) ?? "");
-    const score = textSimilarity(text, answer);
-    if (score > bestScore) {
-      bestScore = score;
+    optionTexts.push(text.trim());
+  }
+
+  let bestIdx = -1;
+  let matchMethod: string | null = null;
+
+  // 1. Exact match — same logic as fillReactSelect.
+  const wantLower = answer.trim().toLowerCase();
+  for (let i = 0; i < optionTexts.length; i++) {
+    if (optionTexts[i].toLowerCase() === wantLower) {
       bestIdx = i;
+      matchMethod = "exact";
+      break;
     }
   }
+
+  // 2. Polarity (yes/no) — if our answer is literally "Yes" or "No",
+  //    prefer a radio whose label STARTS with that polarity word and
+  //    explicitly skip the opposite.
+  if (bestIdx < 0 && /^(yes|no)$/i.test(answer.trim())) {
+    const want = answer.trim().toLowerCase();
+    const opposite = want === "yes" ? "no" : "yes";
+    for (let i = 0; i < optionTexts.length; i++) {
+      const t = optionTexts[i].toLowerCase();
+      if (!t) continue;
+      if (new RegExp(`^${opposite}\\b`).test(t)) continue;
+      if (new RegExp(`^${want}\\b`).test(t)) {
+        bestIdx = i;
+        matchMethod = "polarity";
+        break;
+      }
+    }
+  }
+
+  // 3. Phase C resolver — when the deterministic methods miss, let
+  //    Claude pick from the actual radio labels or abstain. Same
+  //    contract as fillReactSelect: abstain → leave radios unchecked
+  //    (Phase 3's gate routes the application to needsHuman).
+  if (bestIdx < 0 && resolverCtx) {
+    const { resolveSelectField } = await import("./resolve-field");
+    const visible = optionTexts.filter((t) => t.length > 0);
+    const resolution = await resolveSelectField({
+      label: question,
+      availableOptions: visible,
+      profile: resolverCtx.profile,
+      jobCtx: resolverCtx.jobCtx,
+    });
+    resolverCtx.resolvedFields?.push({
+      label: question.slice(0, 200),
+      value: resolution.value,
+      source: resolution.source,
+      confidence: resolution.confidence,
+      reason: resolution.reason,
+    });
+    if (resolution.value) {
+      const idx = optionTexts.findIndex(
+        (t) => t.trim().toLowerCase() === resolution.value!.trim().toLowerCase(),
+      );
+      if (idx >= 0) {
+        bestIdx = idx;
+        matchMethod = "llm";
+      }
+    } else {
+      steps.push({
+        step: "abstained_radio",
+        detail: `${label}: ${resolution.reason.slice(0, 80)}`,
+        ok: false,
+      });
+      return false;
+    }
+  }
+
+  // 4. Legacy fuzzy fallback — only when no resolver context (older
+  //    call sites that haven't been threaded through yet).
+  if (bestIdx < 0 && !resolverCtx) {
+    let bestScore = 0;
+    for (let i = 0; i < optionTexts.length; i++) {
+      const score = textSimilarity(optionTexts[i], answer);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIdx = i;
+        matchMethod = "fuzzy";
+      }
+    }
+  }
+
   if (bestIdx >= 0) {
     try {
       await radios.nth(bestIdx).check({ timeout: 2000 });
-      steps.push({ step: "checked_radio", detail: label, ok: true });
+      steps.push({
+        step: "checked_radio",
+        detail: `${label} → ${optionTexts[bestIdx].slice(0, 40)} (${matchMethod ?? "?"})`,
+        ok: true,
+      });
       return true;
     } catch (e) {
       steps.push({
