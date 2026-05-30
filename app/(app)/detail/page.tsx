@@ -320,6 +320,9 @@ function DetailInner() {
               hasPreSubmitScreenshot={data.events.some(
                 (e) => e.step === "screenshot_pre_submit",
               )}
+              hasPostSubmitScreenshot={data.events.some(
+                (e) => e.step === "screenshot_post_submit",
+              )}
             />
           )}
 
@@ -465,6 +468,7 @@ function NeedsHumanCard({
   applyUrl,
   botBlockSignal,
   hasPreSubmitScreenshot,
+  hasPostSubmitScreenshot,
 }: {
   applicationId: string;
   reason: string;
@@ -475,12 +479,16 @@ function NeedsHumanCard({
   applyUrl: string;
   botBlockSignal?: string;
   hasPreSubmitScreenshot: boolean;
+  hasPostSubmitScreenshot: boolean;
 }) {
   const lowFields = resolvedFields.filter((f) => f.confidence !== "high");
   const highFields = resolvedFields.filter((f) => f.confidence === "high");
   const isBotBlocked = reason.startsWith("bot_blocked");
-  const screenshotUrl = hasPreSubmitScreenshot
+  const preUrl = hasPreSubmitScreenshot
     ? `/api/applications/${applicationId}/screenshot?phase=pre`
+    : null;
+  const postUrl = hasPostSubmitScreenshot
+    ? `/api/applications/${applicationId}/screenshot?phase=post`
     : null;
   return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl3 p-6">
@@ -533,33 +541,62 @@ function NeedsHumanCard({
         </div>
       )}
 
-      {screenshotUrl && (
-        <div className="mt-4 bg-white border border-amber-200 rounded-xl2 p-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[12.5px] font-semibold text-ink-soft">
-              Here&apos;s what I filled in (screenshot from the server-side
-              browser)
-            </p>
-            <span className="text-[11px] text-ink-faint">
-              {highFields.length} field{highFields.length === 1 ? "" : "s"} verified · {lowFields.length} need review
-            </span>
-          </div>
-          <a
-            href={screenshotUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="block rounded-ctrl overflow-hidden border border-sand-200 hover:border-ink/30 transition-colors"
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={screenshotUrl}
-              alt="Filled form (pre-submit screenshot)"
-              className="w-full h-auto block"
-              style={{ maxHeight: "320px", objectFit: "cover", objectPosition: "top" }}
-            />
-          </a>
-          <p className="mt-1.5 text-[11px] text-ink-faint">Click to open full size.</p>
+      {(preUrl || postUrl) && (
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {preUrl && (
+            <div className="bg-white border border-amber-200 rounded-xl2 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[12.5px] font-semibold text-ink-soft">
+                  Before submit (what I filled)
+                </p>
+                <span className="text-[11px] text-ink-faint">
+                  {highFields.length}✓ · {lowFields.length} review
+                </span>
+              </div>
+              <a
+                href={preUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-ctrl overflow-hidden border border-sand-200 hover:border-ink/30 transition-colors"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={preUrl}
+                  alt="Filled form (pre-submit)"
+                  className="w-full h-auto block"
+                  style={{ maxHeight: "260px", objectFit: "cover", objectPosition: "top" }}
+                />
+              </a>
+            </div>
+          )}
+          {postUrl && (
+            <div className="bg-white border border-amber-200 rounded-xl2 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[12.5px] font-semibold text-ink-soft">
+                  After submit (what the company showed)
+                </p>
+                <span className="text-[11px] text-ink-faint">post-click</span>
+              </div>
+              <a
+                href={postUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded-ctrl overflow-hidden border border-sand-200 hover:border-ink/30 transition-colors"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={postUrl}
+                  alt="After submit"
+                  className="w-full h-auto block"
+                  style={{ maxHeight: "260px", objectFit: "cover", objectPosition: "top" }}
+                />
+              </a>
+            </div>
+          )}
         </div>
+      )}
+      {(preUrl || postUrl) && (
+        <p className="mt-1.5 text-[11px] text-ink-faint">Click either to open full size.</p>
       )}
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
