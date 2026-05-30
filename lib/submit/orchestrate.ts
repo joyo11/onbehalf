@@ -1,9 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/client";
 import { application, applicationEvent, job, profile, user as userTable } from "../db/schema";
 import { tailorForJob } from "../tailor";
 import { startSession } from "./browserbase";
 import { fillAshbyForm, isAshbyPage } from "./ashby";
+import { detectVisibleChallenge } from "./bot-block";
 import { fillGreenhouseForm, isGreenhousePage } from "./greenhouse";
 import { fillLeverForm, isLeverPage } from "./lever";
 import type { SubmissionProfile, SubmissionResult, SubmissionStep } from "./types";
@@ -327,6 +328,52 @@ export async function runSubmission(
     await logEvent(applicationId, "ats_detected", { ats });
 
     if (ats === "greenhouse" || ats === "lever" || ats === "ashby") {
+      // Pre-fill bot-block probe. We give the page ~2s to mount any
+      // lazy-loaded challenge (Cloudflare interstitial, Turnstile widget,
+      // reCAPTCHA bframe), then probe for VISIBLE challenges only —
+      // invisible reCAPTCHA v3 doesn't count. If a challenge is up, the
+      // application becomes needsHuman with reason `bot_blocked_pre_fill`
+      // and we hand control to the user. This signal NEVER feeds
+      // routing/matching — see memory project-onbehalf-bot-block-one-way.
+      await session.page.waitForTimeout(2000);
+      const block = await detectVisibleChallenge(session.page);
+      if (block.blocked) {
+        const blockShot = await session.page.screenshot({
+          fullPage: true,
+          type: "jpeg",
+          quality: 70,
+        });
+        await logEvent(applicationId, "bot_blocked_pre_fill", {
+          signal: block.signal,
+          detail: block.detail,
+          url: session.page.url(),
+          imageBase64: blockShot.toString("base64"),
+          size: blockShot.length,
+        });
+        const reasonPayload = {
+          needsHumanReason: "bot_blocked_pre_fill",
+          botBlockSignal: block.signal,
+          botBlockDetail: block.detail,
+        };
+        await db
+          .update(application)
+          .set({
+            status: "needsHuman",
+            failureReason: `bot_blocked_pre_fill: ${block.signal}`,
+            customAnswersJson: sql`COALESCE(${application.customAnswersJson}, '{}'::jsonb) || ${JSON.stringify(reasonPayload)}::jsonb`,
+          })
+          .where(eq(application.id, applicationId));
+        return {
+          ok: true,
+          ats,
+          steps,
+          finalUrl,
+          liveViewUrl,
+          realSubmitted: false,
+          error: null,
+        };
+      }
+
       // Job context for the smart-fill fallback (LLM-generated answers for
       // unknown required fields). jdSummary is the first 1500 chars of the
       // JD; if jdText is missing we fall back to company+title only.
