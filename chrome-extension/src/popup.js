@@ -29,7 +29,36 @@ function setError(text) {
 
 async function send(msg) {
   return new Promise((resolve) => {
-    chrome.runtime.sendMessage(msg, (resp) => resolve(resp ?? { ok: false }));
+    chrome.runtime.sendMessage(msg, (resp) => {
+      // Read lastError so Chrome doesn't log the noisy warning. We
+      // treat any missing response as `{ ok: false }` with an error
+      // message that points at the failure.
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr) {
+        resolve({
+          ok: false,
+          body: { error: `background bridge: ${lastErr.message}` },
+        });
+        return;
+      }
+      resolve(resp ?? { ok: false, body: { error: "no response" } });
+    });
+  });
+}
+
+async function tellTabSafe(tab, msg) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tab.id, msg, (resp) => {
+      const lastErr = chrome.runtime.lastError;
+      if (lastErr) {
+        resolve({
+          ok: false,
+          error: `content-script bridge: ${lastErr.message}`,
+        });
+        return;
+      }
+      resolve(resp ?? { ok: false, error: "no response" });
+    });
   });
 }
 
@@ -39,9 +68,7 @@ async function getActiveTab() {
 }
 
 async function tellTab(tab, msg) {
-  return new Promise((resolve) => {
-    chrome.tabs.sendMessage(tab.id, msg, (resp) => resolve(resp ?? { ok: false }));
-  });
+  return tellTabSafe(tab, msg);
 }
 
 let cachedJob = null;
@@ -146,6 +173,7 @@ async function runVisionFill({ dryRun }) {
   const plan = planData.plan;
   const cost = planData.tokenCost ?? 0;
 
+  setLoadingText(`Plan received (${plan.length} actions). Executing…`);
   const tab = { id: cachedTabId };
   const execResp = await tellTab(tab, { type: "EXECUTE_PLAN", plan });
   if (!execResp?.ok || !execResp.result) {
