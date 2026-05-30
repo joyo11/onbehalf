@@ -1,8 +1,8 @@
 "use client";
 
-import { useUser } from "@clerk/nextjs";
+import { SignOutButton, useUser } from "@clerk/nextjs";
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Ic } from "@/components/ob/icons";
 import {
   BRAND,
@@ -79,16 +79,90 @@ function TopNav() {
               <span className="sm:hidden">Dashboard</span>
               <Ic.arrow className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
-            <Link
-              href="/dashboard"
-              className="h-9 w-9 rounded-full bg-teal-500 text-white grid place-items-center font-bold text-[13px] shrink-0"
-            >
-              {initials || "SJ"}
-            </Link>
+            <UserMenu initials={initials || "SJ"} />
           </SignedIn>
         </div>
       </div>
     </header>
+  );
+}
+
+function UserMenu({ initials }: { initials: string }) {
+  const { user } = useUser();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="h-9 w-9 rounded-full bg-teal-500 text-white grid place-items-center font-bold text-[13px] hover:bg-teal-600 transition-colors"
+      >
+        {initials}
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 mt-2 w-[220px] rounded-xl2 border border-sand-200 bg-white shadow-lg overflow-hidden py-1.5"
+        >
+          {user && (
+            <div className="px-3.5 py-2.5 border-b border-sand-100">
+              <p className="text-[13.5px] font-semibold text-ink truncate">
+                {user.fullName ?? user.firstName ?? "You"}
+              </p>
+              <p className="text-[12px] text-ink-mute truncate">
+                {user.primaryEmailAddress?.emailAddress ?? ""}
+              </p>
+            </div>
+          )}
+          <Link
+            href="/dashboard"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2.5 px-3.5 py-2.5 text-[13.5px] font-semibold text-ink hover:bg-sand-50 transition-colors"
+          >
+            <Ic.grid className="h-[16px] w-[16px] text-ink-mute" />
+            <span>Dashboard</span>
+          </Link>
+          <Link
+            href="/settings"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2.5 px-3.5 py-2.5 text-[13.5px] font-semibold text-ink hover:bg-sand-50 transition-colors"
+          >
+            <Ic.gear className="h-[16px] w-[16px] text-ink-mute" />
+            <span>Settings</span>
+          </Link>
+          <div className="border-t border-sand-100 my-1" />
+          <SignOutButton redirectUrl="/">
+            <button
+              type="button"
+              className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-[13.5px] font-semibold text-ink hover:bg-sand-50 transition-colors"
+            >
+              <Ic.signOut className="h-[16px] w-[16px] text-ink-mute" />
+              <span>Sign out</span>
+            </button>
+          </SignOutButton>
+        </div>
+      )}
+    </div>
   );
 }
 
