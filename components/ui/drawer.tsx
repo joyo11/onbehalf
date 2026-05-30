@@ -37,7 +37,7 @@ export function Drawer({
       <div className="absolute inset-0 bg-black/20 anim-pop" onClick={onClose} aria-hidden />
       <div
         className="absolute right-0 top-0 h-full bg-white border-l border-line shadow-pop flex flex-col anim-slide-in"
-        style={{ width }}
+        style={{ width: `min(100vw, ${width}px)` }}
         role="dialog"
         aria-modal="true"
         aria-label={title}
