@@ -71,6 +71,7 @@ CRITICAL RULES:
    - The right answer would require interview-style judgment ("describe a project")
 7. Skip optional fields the candidate has no value for. Don't invent.
 8. Pixel coordinates: be PRECISE. Click on the visible input or dropdown control, not a label or a heading.
+9. NEVER mention or reference any company other than the target company (from JOB CONTEXT) in your textarea answers. If the candidate's cached cover letter or profile mentions a different employer or target company, ignore those references and write the answer about the current target company only.
 
 Output ONLY the JSON array, no prose.
 
