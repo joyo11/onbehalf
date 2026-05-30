@@ -46,6 +46,38 @@
   }
 
   /**
+   * Find an input via name/id selectors OR by walking visible labels
+   * matching a regex. Used for LinkedIn / Other Website / Portfolio
+   * which have inconsistent name attributes across boards.
+   */
+  async function fillByLabel(labelRe, nameSelectors, value) {
+    if (!value) return false;
+    // Try the name selectors first.
+    if (await fillByName(nameSelectors, value)) return true;
+    // Walk labels.
+    const inputs = await surface.$$("input[type='text'], input[type='url'], input:not([type])");
+    for (const el of inputs) {
+      if (!(await surface.isVisible(el))) continue;
+      // Skip React-Select hidden inputs (would garble URL into a dropdown)
+      if (
+        el.closest(
+          "[class*='select__control' i], [class*='Select__control' i], [class*='select__value-container' i]",
+        )
+      ) {
+        continue;
+      }
+      const existing = await surface.getValue(el);
+      if (existing && existing.trim().length > 0) continue;
+      const label = await surface.labelFor(el);
+      if (label && labelRe.test(label)) {
+        await surface.fill(el, value);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * Find the resume file input and upload bytes into it.
    */
   async function uploadResume(filename, bytes) {
@@ -157,6 +189,18 @@
     );
     for (const el of inputs) {
       if (!(await surface.isVisible(el))) continue;
+      // Fix from 2026-05-30 launch test: React-Select renders a hidden
+      // text input inside its control for type-to-filter. If we treat
+      // it as a normal text input and let Claude write into it, the
+      // React-Select renders the answer as garbage instead of picking
+      // an option. Skip any input that lives inside a React-Select.
+      if (
+        el.closest(
+          "[class*='select__control' i], [class*='Select__control' i], [class*='select__value-container' i]",
+        )
+      ) {
+        continue;
+      }
       const existing = await surface.getValue(el);
       if (existing && existing.trim().length > 0) continue;
       const type = await surface.attr(el, "type");
@@ -214,17 +258,23 @@
   }
 
   /**
-   * Phase 6c — walk every unfilled select-like element (native
-   * <select> + React-Select containers), ask the server resolver
-   * to pick from the visible options, click the answer. Returns
-   * { filled, abstained, total }.
+   * Phase 6c (post-launch-test refactor) — find every dropdown DIRECTLY
+   * instead of starting from a label and walking to find its control.
+   * Rationale: Figma's EEO section has labels that aren't ancestors of
+   * the React-Select; my old ancestor-walk missed them. New approach:
+   *
+   *   1. Native <select>: enumerate, get label from labelFor()
+   *   2. React-Select controls: query for every .select__control
+   *      and walk BACK to find the label
+   *
+   * Returns { filled, abstained, total }.
    */
   async function resolveDropdowns(applicationId) {
     let filled = 0;
     let abstained = 0;
     let total = 0;
 
-    // 1. Native selects — easiest case.
+    // 1. Native <select>.
     const selects = await surface.$$("select");
     for (const sel of selects) {
       if (!(await surface.isVisible(sel))) continue;
@@ -236,72 +286,68 @@
       const options = Array.from(sel.options || [])
         .map((o) => o.text.trim())
         .filter((t) => t.length > 0 && !/^select\.\.\.$|^select an option$/i.test(t));
-      if (options.length === 0) continue;
+      if (options.length === 0) {
+        abstained++;
+        continue;
+      }
       const resp = await sendBackground({
         type: "RESOLVE_FIELD",
         payload: { applicationId, label, options },
       });
       if (resp?.ok && resp.body?.value) {
-        // Find the option whose visible text matches and set value to its value
+        let didFill = false;
         for (const o of Array.from(sel.options || [])) {
           if (o.text.trim().toLowerCase() === resp.body.value.trim().toLowerCase()) {
             sel.value = o.value;
             sel.dispatchEvent(new Event("change", { bubbles: true }));
             filled++;
+            didFill = true;
             break;
           }
         }
+        if (!didFill) abstained++;
       } else {
         abstained++;
       }
     }
 
-    // 2. React-Selects — find every label whose container houses a
-    //    React-Select control that hasn't been picked yet.
-    const labels = await surface.$$("label, legend");
-    for (const lbl of labels) {
-      if (!(await surface.isVisible(lbl))) continue;
-      const labelText = (await surface.getText(lbl)).replace(/\s+/g, " ").trim();
+    // 2. React-Select controls — find directly, then walk back to label.
+    const controls = await surface.$$(
+      "[class*='select__control' i], [class*='Select__control' i]",
+    );
+    for (const ctl of controls) {
+      if (!(await surface.isVisible(ctl))) continue;
+      // Already filled? React-Select shows .select__single-value when
+      // a value is committed, .select__placeholder when not.
+      const hasValue = ctl.querySelector("[class*='single-value' i]");
+      const hasPlaceholder = ctl.querySelector("[class*='placeholder' i]");
+      if (hasValue) continue;
+      if (!hasPlaceholder) continue; // not a populated/empty Select; weird state
+
+      // Find the label by walking up from the control and looking for
+      // any nearby label/legend/heading. We expand to also check the
+      // PARENT's sibling labels (Figma puts label and select side-by-
+      // side as sibling divs under a section container).
+      const labelText = await findNearbyLabel(ctl);
       if (!labelText || labelText.length < 4) continue;
-      // Find an ancestor div that contains a React-Select control.
-      let container = lbl.parentElement;
-      let depth = 0;
-      let control = null;
-      while (container && depth < 4 && !control) {
-        control = container.querySelector(
-          "[class*='select__control' i], [class*='Select__control' i], div[class*='control' i] [class*='placeholder' i], [role='combobox']",
-        );
-        if (control) {
-          // climb to the actual control element
-          const ctl =
-            control.closest(
-              "[class*='select__control' i], [class*='Select__control' i]",
-            ) ?? control;
-          control = ctl;
-        }
-        if (!control) {
-          container = container.parentElement;
-          depth++;
-        }
-      }
-      if (!control) continue;
-      if (!(await surface.isVisible(control))) continue;
-      // Skip if a value already committed (no placeholder text).
-      const placeholder = container?.querySelector("[class*='placeholder' i]");
-      if (!placeholder) continue;
 
       total++;
-      control.click();
-      await sleep(250);
+      ctl.click();
+      await sleep(280);
       const optionEls = Array.from(
-        document.querySelectorAll("[role='option'], [class*='option']:not([class*='disabled' i])"),
+        document.querySelectorAll(
+          "[role='option'], [class*='option' i]:not([class*='disabled' i])",
+        ),
       ).filter((el) => {
         const r = el.getBoundingClientRect();
         return r.width > 0 && r.height > 0;
       });
-      const optionTexts = optionEls.map((el) => (el.textContent ?? "").trim()).filter((t) => t.length > 0);
+      const optionTexts = optionEls
+        .map((el) => (el.textContent ?? "").trim())
+        .filter((t) => t.length > 0);
       if (optionTexts.length === 0) {
-        document.body.click(); // close
+        document.body.click();
+        abstained++;
         continue;
       }
 
@@ -318,16 +364,60 @@
         if (match) {
           match.click();
           filled++;
-          await sleep(120);
+          await sleep(150);
           continue;
         }
       }
-      // Abstain — close the menu and move on.
       document.body.click();
       abstained++;
     }
 
     return { filled, abstained, total };
+  }
+
+  /**
+   * Walk back from a React-Select control to find the closest label
+   * text. Tries (in order):
+   *   - aria-labelledby on the control
+   *   - previous label/legend sibling at each ancestor level up to 5
+   *   - heading inside the same ancestor (h3/h4/.label)
+   */
+  async function findNearbyLabel(ctl) {
+    const ariaLabelledBy = ctl.getAttribute("aria-labelledby");
+    if (ariaLabelledBy) {
+      const el = document.getElementById(ariaLabelledBy);
+      if (el?.textContent) return el.textContent.replace(/\s+/g, " ").trim();
+    }
+    let node = ctl.parentElement;
+    for (let depth = 0; node && depth < 5; depth++, node = node.parentElement) {
+      // Check previous siblings of this node for a label/legend/heading
+      let sib = node.previousElementSibling;
+      while (sib) {
+        if (
+          sib.matches("label, legend, .label, h3, h4") &&
+          sib.textContent &&
+          sib.textContent.trim().length > 0
+        ) {
+          return sib.textContent.replace(/\s+/g, " ").trim().slice(0, 200);
+        }
+        // Sometimes label is wrapped in a div above
+        const inner = sib.querySelector("label, legend");
+        if (inner?.textContent) {
+          return inner.textContent.replace(/\s+/g, " ").trim().slice(0, 200);
+        }
+        sib = sib.previousElementSibling;
+      }
+      // Or a label INSIDE the current ancestor (above the control)
+      const heading = node.querySelector("label, legend, .label, h3, h4");
+      if (heading && heading.textContent && heading.textContent.trim().length > 0) {
+        const t = heading.textContent.replace(/\s+/g, " ").trim();
+        // Reject if the "label" is actually inside the React-Select itself
+        if (!heading.closest("[class*='select__control' i]")) {
+          return t.slice(0, 200);
+        }
+      }
+    }
+    return "";
   }
 
   function sleep(ms) {
@@ -371,6 +461,42 @@
         filled.push({ field: "phone", value: profile.phone });
       } else {
         skipped.push("phone");
+      }
+    }
+
+    // Profile URL fields — LinkedIn, GitHub, portfolio. Optional but
+    // worth filling when present so the user doesn't have to.
+    if (profile.linkedinUrl) {
+      if (
+        await fillByLabel(
+          /linkedin/i,
+          ["input[name*='linkedin' i]", "input[id*='linkedin' i]"],
+          profile.linkedinUrl,
+        )
+      ) {
+        filled.push({ field: "linkedin", value: profile.linkedinUrl });
+      }
+    }
+    if (profile.githubUrl) {
+      if (
+        await fillByLabel(
+          /github/i,
+          ["input[name*='github' i]", "input[id*='github' i]"],
+          profile.githubUrl,
+        )
+      ) {
+        filled.push({ field: "github", value: profile.githubUrl });
+      }
+    }
+    if (profile.portfolioUrl) {
+      if (
+        await fillByLabel(
+          /portfolio|website|personal site/i,
+          ["input[name*='portfolio' i]", "input[name*='website' i]"],
+          profile.portfolioUrl,
+        )
+      ) {
+        filled.push({ field: "portfolio", value: profile.portfolioUrl });
       }
     }
 

@@ -96,6 +96,9 @@ async function runFill() {
       lastName: cachedJob.profile.lastName,
       email: cachedJob.profile.email,
       phone: cachedJob.profile.phone,
+      linkedinUrl: cachedJob.profile.linkedinUrl,
+      githubUrl: cachedJob.profile.githubUrl,
+      portfolioUrl: cachedJob.profile.portfolioUrl,
       resume: cachedJob.resume,
       coverLetter: cachedJob.coverLetter,
     },
@@ -106,20 +109,84 @@ async function runFill() {
     return;
   }
 
+  // Total a quick filled count + a hint at how many need eyes.
+  const filledCount = resp.result.filled.length;
+  const skippedCount = resp.result.skipped.length;
+
+  // Top message: "Filled N. K still need your eyes on the page."
   $("filled-list").innerHTML = "";
-  for (const f of resp.result.filled) {
+  const head = document.createElement("li");
+  head.textContent = `Filled ${filledCount} field${filledCount === 1 ? "" : "s"}.`;
+  head.style.fontWeight = "700";
+  head.style.borderBottom = "0";
+  $("filled-list").appendChild(head);
+  for (const f of resp.result.filled.slice(0, 12)) {
     const li = document.createElement("li");
-    li.textContent = `${f.field}: ${String(f.value).slice(0, 40)}`;
+    li.textContent = `${f.field}`;
+    li.style.fontWeight = "400";
     $("filled-list").appendChild(li);
   }
+  if (filledCount > 12) {
+    const li = document.createElement("li");
+    li.textContent = `+ ${filledCount - 12} more`;
+    li.style.color = "var(--ink-mute)";
+    $("filled-list").appendChild(li);
+  }
+
   $("skipped-line").textContent =
-    resp.result.skipped.length > 0
-      ? `Skipped: ${resp.result.skipped.join(", ")}`
-      : "All known fields filled.";
+    skippedCount > 0
+      ? `${skippedCount} field${skippedCount === 1 ? "" : "s"} need your eyes — review on the page before submitting.`
+      : "All known fields filled. Review on the page before submitting.";
 
   show("state-filled");
   $("approve-submit").onclick = () => clickSubmit(tab, resp.result.submitButtonFound);
   $("cancel-fill").onclick = () => window.close();
+
+  // Scroll the page to the first visibly-required field that's still
+  // empty so the user can finish without hunting.
+  scrollToFirstUnfilled(tab);
+}
+
+async function scrollToFirstUnfilled(tab) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        const fields = Array.from(
+          document.querySelectorAll(
+            "input[type='text'], input:not([type]), textarea, [class*='select__control' i], select",
+          ),
+        );
+        for (const el of fields) {
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) continue;
+          // For inputs: value still empty
+          if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+            const val = (el).value ?? "";
+            if (val.trim().length > 0) continue;
+          } else if (el.tagName === "SELECT") {
+            if ((el).value && (el).value.length > 0) continue;
+          } else {
+            // React-Select control — placeholder visible?
+            if (!el.querySelector("[class*='placeholder' i]")) continue;
+          }
+          // Required signals
+          const required = el.required ?? false;
+          const ariaRequired = el.getAttribute && el.getAttribute("aria-required") === "true";
+          const labelStar = (() => {
+            const l = el.id ? document.querySelector(`label[for='${CSS.escape(el.id)}']`) : null;
+            const t = l?.textContent ?? "";
+            return /\*\s*$/.test(t);
+          })();
+          if (!required && !ariaRequired && !labelStar) continue;
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          return;
+        }
+      },
+    });
+  } catch {
+    // best-effort scroll, don't fail the popup
+  }
 }
 
 async function clickSubmit(tab, hasSubmit) {

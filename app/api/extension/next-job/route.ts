@@ -79,6 +79,9 @@ export async function GET(req: Request) {
         jobApplyUrl: job.applyUrl,
         profileFullName: profile.fullName,
         profilePhone: profile.phone,
+        profileLinkedinUrl: profile.linkedinUrl,
+        profileGithubUrl: profile.githubUrl,
+        profilePortfolioUrl: profile.portfolioUrl,
         profileResumePdf: profile.resumePdf,
         profileResumeFileName: profile.resumeFileName,
       })
@@ -135,6 +138,9 @@ export async function GET(req: Request) {
         lastName: last,
         email: user.email,
         phone: row.profilePhone,
+        linkedinUrl: row.profileLinkedinUrl ?? null,
+        githubUrl: row.profileGithubUrl ?? null,
+        portfolioUrl: row.profilePortfolioUrl ?? null,
       },
       resume: resumeBase64
         ? {
