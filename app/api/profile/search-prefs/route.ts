@@ -14,6 +14,7 @@ type Body = {
   desiredSalaryMin?: number | null;
   totalYearsExperience?: string | null;
   seniorityLevel?: string | null;
+  batchSize?: number;
 };
 
 /**
@@ -40,6 +41,9 @@ export async function POST(req: Request) {
   if (body.desiredSalaryMin !== undefined) patch.desiredSalaryMin = body.desiredSalaryMin;
   if (body.totalYearsExperience !== undefined) patch.totalYearsExperience = body.totalYearsExperience;
   if (body.seniorityLevel !== undefined) patch.seniorityLevel = body.seniorityLevel;
+  if (typeof body.batchSize === "number" && body.batchSize >= 1 && body.batchSize <= 50) {
+    patch.batchSize = Math.floor(body.batchSize);
+  }
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ ok: true, updated: 0 });
@@ -51,6 +55,7 @@ export async function POST(req: Request) {
   // navigation rehydrates from the DB instead of serving a stale RSC payload.
   revalidatePath("/search");
   revalidatePath("/dashboard");
+  revalidatePath("/matches");
 
   console.log("[search-prefs] updated", { userId: user.id, keys: Object.keys(patch) });
   return NextResponse.json({ ok: true, updated: Object.keys(patch).length });

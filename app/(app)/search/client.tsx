@@ -13,6 +13,7 @@ export type SearchDefaults = {
   desiredSalaryMin: number | null;
   totalYearsExperience: string | null;
   seniorityLevel: string | null;
+  batchSize: number | null;
 };
 
 const YOE_OPTIONS = ["0-2", "3-5", "6-8", "9-12", "13+"] as const;
@@ -34,7 +35,7 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
     defaults.desiredSalaryMin ? Math.round(defaults.desiredSalaryMin / 1000) : 150,
   );
   const [size, setSize] = useState<string[]>(["Startup", "Mid"]);
-  const [batch, setBatch] = useState<number>(12);
+  const [batch, setBatch] = useState<number>(defaults.batchSize ?? 10);
   const [mode, setMode] = useState<string>("review-each");
   const [yoe, setYoe] = useState<string | null>(defaults.totalYearsExperience);
   const [level, setLevel] = useState<string | null>(defaults.seniorityLevel);
@@ -54,6 +55,7 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
         desiredSalaryMin: salary * 1000,
         totalYearsExperience: yoe,
         seniorityLevel: level,
+        batchSize: batch,
       }),
     }).catch(() => {});
 

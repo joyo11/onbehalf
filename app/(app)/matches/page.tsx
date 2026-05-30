@@ -1,5 +1,9 @@
+import { eq } from "drizzle-orm";
 import { Ic } from "@/components/ob/icons";
 import { Eyebrow } from "@/components/ob/primitives";
+import { getCurrentUser } from "@/lib/auth";
+import { db } from "@/lib/db/client";
+import { profile } from "@/lib/db/schema";
 import { findMatchingJobs } from "@/lib/jobs/queries";
 import { MatchesList } from "./list";
 
@@ -23,7 +27,24 @@ export default async function MatchesScreen({
   const roles = sp.roles ? sp.roles.split(",").filter(Boolean) : [];
   const locations = sp.locations ? sp.locations.split(",").filter(Boolean) : [];
   const salaryMin = sp.salaryMin ? Number(sp.salaryMin) : undefined;
-  const limit = Math.max(1, Math.min(50, sp.limit ? Number(sp.limit) : 50));
+  // Default batch from the user's persisted profile.batchSize (saved by
+  // /search). URL ?limit= wins when present so the dashboard "Apply to
+  // N" buttons still work, but plain /matches navigation now restores
+  // the user's last choice instead of falling back to a hardcoded 50.
+  const u = await getCurrentUser().catch(() => null);
+  let savedBatch = 10;
+  if (u) {
+    const [p] = await db
+      .select({ batchSize: profile.batchSize })
+      .from(profile)
+      .where(eq(profile.userId, u.id))
+      .limit(1);
+    if (p?.batchSize && p.batchSize >= 1 && p.batchSize <= 50) {
+      savedBatch = p.batchSize;
+    }
+  }
+  const requestedLimit = sp.limit ? Number(sp.limit) : savedBatch;
+  const limit = Math.max(1, Math.min(50, requestedLimit));
   const level = (VALID_LEVELS as readonly string[]).includes(sp.level ?? "")
     ? (sp.level as Level)
     : null;

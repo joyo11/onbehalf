@@ -114,6 +114,11 @@ export const profile = pgTable("profile", {
   // Self-identified job-title level — used as a hard filter on matches so
   // a Mid candidate doesn't see Staff/Principal listings.
   seniorityLevel: text("seniority_level"), // junior | mid | senior | staff | principal
+  // Last batch size the user chose on /search. /matches uses this as
+  // its default when no ?limit= URL param is present, so plain
+  // /matches navigation restores the user's last choice instead of
+  // falling back to a hardcoded 50.
+  batchSize: integer("batch_size"),
   yearsAtCurrentRole: integer("years_at_current_role"),
   skillYears: jsonb("skill_years").notNull().default(sql`'{}'::jsonb`),
 

@@ -14,6 +14,7 @@ export default async function SearchPage() {
     desiredSalaryMin: null,
     totalYearsExperience: null,
     seniorityLevel: null,
+    batchSize: null,
   };
 
   if (user) {
@@ -25,6 +26,7 @@ export default async function SearchPage() {
         desiredSalaryMin: profile.desiredSalaryMin,
         totalYearsExperience: profile.totalYearsExperience,
         seniorityLevel: profile.seniorityLevel,
+        batchSize: profile.batchSize,
       })
       .from(profile)
       .where(eq(profile.userId, user.id))
@@ -37,6 +39,7 @@ export default async function SearchPage() {
         desiredSalaryMin: p.desiredSalaryMin,
         totalYearsExperience: p.totalYearsExperience,
         seniorityLevel: p.seniorityLevel,
+        batchSize: p.batchSize,
       };
     }
   }
