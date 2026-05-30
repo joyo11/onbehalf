@@ -71,6 +71,26 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  // Phase 6b — smart-fill batched Claude call for free-text fields.
+  // payload = { applicationId, fields: [{selector, label, kind, ...}] }
+  if (msg.type === "SMART_FILL") {
+    api(`/api/extension/smart-fill`, {
+      method: "POST",
+      body: JSON.stringify(msg.payload),
+    }).then(sendResponse);
+    return true;
+  }
+
+  // Phase 6c — LLM-picked option from a real list (React-Select, native
+  // select, radio group). payload = { applicationId, label, options[] }
+  if (msg.type === "RESOLVE_FIELD") {
+    api(`/api/extension/resolve-field`, {
+      method: "POST",
+      body: JSON.stringify(msg.payload),
+    }).then(sendResponse);
+    return true;
+  }
+
   // From content script: report fill result + screenshot back to the
   // server for the gate decision. Phase 4 wiring.
   if (msg.type === "REPORT_FILL_RESULT") {
