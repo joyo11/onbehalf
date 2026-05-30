@@ -7,7 +7,7 @@ import {
   mapEeoToOption,
 } from "./greenhouse";
 import type { SmartFillContext } from "./smart-fill";
-import type { SubmissionProfile, SubmissionStep } from "./types";
+import type { ResolvedField, SubmissionProfile, SubmissionStep } from "./types";
 
 /**
  * Fill an Ashby-hosted application form.
@@ -38,9 +38,14 @@ export async function fillAshbyForm(
   page: Page,
   profile: SubmissionProfile,
   job?: { company: string; title: string; jdSummary: string },
-): Promise<{ steps: SubmissionStep[]; submitButton: { selector: string } | null }> {
+): Promise<{
+  steps: SubmissionStep[];
+  submitButton: { selector: string } | null;
+  resolvedFields: ResolvedField[];
+}> {
   const llmCtx: SmartFillContext | undefined = job ? { profile, job } : undefined;
   const steps: SubmissionStep[] = [];
+  const resolvedFields: ResolvedField[] = [];
 
   // Ashby is a React SPA — domcontentloaded fires before the form mounts.
   // Wait for ANY of the markers that signal the application form is on
@@ -175,7 +180,7 @@ export async function fillAshbyForm(
   await checkAcknowledgmentBoxes(page, steps);
 
   // N/A fallback for empty required text inputs.
-  await fillEmptyRequiredTextInputs(page, steps, llmCtx);
+  await fillEmptyRequiredTextInputs(page, steps, llmCtx, resolvedFields);
 
   // ── Submit button ─────────────────────────────────────────
   await page.waitForTimeout(200);
@@ -204,6 +209,7 @@ export async function fillAshbyForm(
   return {
     steps,
     submitButton: submitSelector ? { selector: submitSelector } : null,
+    resolvedFields,
   };
 }
 

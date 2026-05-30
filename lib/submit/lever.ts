@@ -1,7 +1,7 @@
 import type { Locator, Page } from "playwright-core";
 import { fillEmptyRequiredTextInputs, mapEeoToOption } from "./greenhouse";
 import type { SmartFillContext } from "./smart-fill";
-import type { SubmissionProfile, SubmissionStep } from "./types";
+import type { ResolvedField, SubmissionProfile, SubmissionStep } from "./types";
 
 /**
  * Fill a Lever-hosted application form (jobs.lever.co/{company}/{job-id}/apply).
@@ -21,8 +21,13 @@ export async function fillLeverForm(
   page: Page,
   profile: SubmissionProfile,
   job?: { company: string; title: string; jdSummary: string },
-): Promise<{ steps: SubmissionStep[]; submitButton: { selector: string } | null }> {
+): Promise<{
+  steps: SubmissionStep[];
+  submitButton: { selector: string } | null;
+  resolvedFields: ResolvedField[];
+}> {
   const llmCtx: SmartFillContext | undefined = job ? { profile, job } : undefined;
+  const resolvedFields: ResolvedField[] = [];
   const steps: SubmissionStep[] = [];
 
   // ── Basic identity ────────────────────────────────────────
@@ -130,7 +135,7 @@ export async function fillLeverForm(
   await checkAcknowledgmentBoxes(page, steps);
 
   // ── N/A fallback for any required text input still empty ──
-  await fillEmptyRequiredTextInputs(page, steps, llmCtx);
+  await fillEmptyRequiredTextInputs(page, steps, llmCtx, resolvedFields);
 
   // ── Submit button (caller decides whether to click) ───────
   await page.waitForTimeout(200);
@@ -160,6 +165,7 @@ export async function fillLeverForm(
   return {
     steps,
     submitButton: submitSelector ? { selector: submitSelector } : null,
+    resolvedFields,
   };
 }
 

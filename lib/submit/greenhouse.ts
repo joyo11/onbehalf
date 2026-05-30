@@ -1,7 +1,7 @@
 import type { Locator, Page } from "playwright-core";
 import { renderCoverLetterPdf } from "./cover-letter-pdf";
 import { inferAnswers, type SmartFillContext, type UnknownField } from "./smart-fill";
-import type { SubmissionProfile, SubmissionStep } from "./types";
+import type { ResolvedField, SubmissionProfile, SubmissionStep } from "./types";
 
 export type { SmartFillContext, UnknownField } from "./smart-fill";
 
@@ -24,15 +24,54 @@ export async function fillGreenhouseForm(
   page: Page,
   profile: SubmissionProfile,
   job?: { company: string; title: string; jdSummary: string },
-): Promise<{ steps: SubmissionStep[]; submitButton: { selector: string } | null }> {
+): Promise<{
+  steps: SubmissionStep[];
+  submitButton: { selector: string } | null;
+  resolvedFields: ResolvedField[];
+}> {
   const steps: SubmissionStep[] = [];
+  const resolvedFields: ResolvedField[] = [];
 
   // ── Basic identity ────────────────────────────────────────
   await tryFill(page, ["#first_name", "input[name='first_name']", "input[id*='first_name']"], profile.firstName, "first_name", steps);
+  if (profile.firstName) {
+    resolvedFields.push({
+      label: "First name",
+      value: profile.firstName,
+      source: "profile",
+      confidence: "high",
+      reason: "profile.firstName",
+    });
+  }
   await tryFill(page, ["#last_name", "input[name='last_name']", "input[id*='last_name']"], profile.lastName, "last_name", steps);
+  if (profile.lastName) {
+    resolvedFields.push({
+      label: "Last name",
+      value: profile.lastName,
+      source: "profile",
+      confidence: "high",
+      reason: "profile.lastName",
+    });
+  }
   await tryFill(page, ["#email", "input[type='email']", "input[name='email']"], profile.email, "email", steps);
+  if (profile.email) {
+    resolvedFields.push({
+      label: "Email",
+      value: profile.email,
+      source: "profile",
+      confidence: "high",
+      reason: "profile.email",
+    });
+  }
   if (profile.phone) {
     await tryFill(page, ["#phone", "input[type='tel']", "input[name='phone']"], profile.phone, "phone", steps);
+    resolvedFields.push({
+      label: "Phone",
+      value: profile.phone,
+      source: "profile",
+      confidence: "high",
+      reason: "profile.phone",
+    });
   }
 
   // ── Resume upload ─────────────────────────────────────────
@@ -83,6 +122,7 @@ export async function fillGreenhouseForm(
     page,
     steps,
     job ? { profile, job } : undefined,
+    resolvedFields,
   );
 
   // ── Submit button ─────────────────────────────────────────
@@ -114,6 +154,7 @@ export async function fillGreenhouseForm(
   return {
     steps,
     submitButton: submitSelector ? { selector: submitSelector } : null,
+    resolvedFields,
   };
 }
 
@@ -736,6 +777,7 @@ export async function fillEmptyRequiredTextInputs(
   page: Page,
   steps: SubmissionStep[],
   ctx?: SmartFillContext,
+  resolvedFields?: ResolvedField[],
 ): Promise<void> {
   const inputLocators = await page
     .locator("input[required][type='text'], input[required]:not([type]), textarea[required]")
@@ -852,11 +894,29 @@ export async function fillEmptyRequiredTextInputs(
   let naFilled = 0;
   for (const p of pending) {
     const answer = answers.get(p.field.selector);
-    const value = answer && answer.trim().length > 0 ? answer : "N/A";
+    const hasAnswer = !!(answer && answer.trim().length > 0);
+    const value = hasAnswer ? answer! : "N/A";
     try {
       await p.locator.fill(value, { timeout: 2000 });
-      if (value === "N/A") naFilled++;
-      else smartFilled++;
+      if (hasAnswer) {
+        smartFilled++;
+        resolvedFields?.push({
+          label: p.field.label,
+          value,
+          source: "llm",
+          confidence: "medium",
+          reason: "smart-fill via Claude (Phase 2 will tighten this signal)",
+        });
+      } else {
+        naFilled++;
+        resolvedFields?.push({
+          label: p.field.label,
+          value: "N/A",
+          source: "abstain",
+          confidence: "abstain",
+          reason: "no profile mapping + smart-fill returned no answer — Phase 2 will route this to needsHuman instead",
+        });
+      }
     } catch {
       // skip
     }

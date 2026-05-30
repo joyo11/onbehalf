@@ -7,7 +7,7 @@ import { fillAshbyForm, isAshbyPage } from "./ashby";
 import { detectVisibleChallenge } from "./bot-block";
 import { fillGreenhouseForm, isGreenhousePage } from "./greenhouse";
 import { fillLeverForm, isLeverPage } from "./lever";
-import type { SubmissionProfile, SubmissionResult, SubmissionStep } from "./types";
+import type { ResolvedField, SubmissionProfile, SubmissionResult, SubmissionStep } from "./types";
 
 const APPLY_TIMEOUT_MS = 50_000;
 
@@ -144,6 +144,7 @@ export async function runSubmission(
       ok: false,
       ats: "unknown",
       steps: [],
+      resolvedFields: [],
       finalUrl: "",
       liveViewUrl: "",
       realSubmitted: false,
@@ -169,6 +170,7 @@ export async function runSubmission(
       ok: false,
       ats: "unknown",
       steps: [],
+      resolvedFields: [],
       finalUrl: "",
       liveViewUrl: "",
       realSubmitted: false,
@@ -279,6 +281,7 @@ export async function runSubmission(
 
   let session: Awaited<ReturnType<typeof startSession>> | null = null;
   const steps: SubmissionStep[] = [];
+  const resolvedFields: ResolvedField[] = [];
   let ats: "greenhouse" | "lever" | "ashby" | "unknown" = "unknown";
   let realSubmitted = false;
   let finalUrl = "";
@@ -374,6 +377,7 @@ export async function runSubmission(
           ok: true,
           ats,
           steps,
+          resolvedFields,
           finalUrl,
           liveViewUrl,
           realSubmitted: false,
@@ -397,9 +401,25 @@ export async function runSubmission(
             ? await fillLeverForm(session.page, subProfile, jobCtx)
             : await fillAshbyForm(session.page, subProfile, jobCtx);
       steps.push(...result.steps);
+      resolvedFields.push(...result.resolvedFields);
       for (const s of result.steps) {
         await logEvent(applicationId, s.step, { detail: s.detail, ok: s.ok });
       }
+
+      // Persist resolution metadata on customAnswersJson so Phase D's
+      // review UI can render each filled field with its source +
+      // confidence. Append rather than overwrite so we keep any earlier
+      // shape (screeners, bot-block info, etc.).
+      const cachedSubmit = result.submitButton?.selector ?? null;
+      await db
+        .update(application)
+        .set({
+          customAnswersJson: sql`COALESCE(${application.customAnswersJson}, '{}'::jsonb) || ${JSON.stringify({
+            resolvedFields,
+            submitSelector: cachedSubmit,
+          })}::jsonb`,
+        })
+        .where(eq(application.id, applicationId));
 
       // Pre-submit screenshot (audit trail; we persist it as base64 so it
       // survives past the ephemeral Browserbase session).
@@ -511,6 +531,7 @@ export async function runSubmission(
       ok: true,
       ats,
       steps,
+      resolvedFields,
       finalUrl,
       liveViewUrl,
       realSubmitted,
@@ -527,6 +548,7 @@ export async function runSubmission(
       ok: false,
       ats,
       steps,
+      resolvedFields,
       finalUrl,
       liveViewUrl,
       realSubmitted: false,
