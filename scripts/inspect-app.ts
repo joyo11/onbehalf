@@ -1,49 +1,41 @@
-import { and, desc, eq, ilike } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "../lib/db/client";
-import { application, applicationEvent, job } from "../lib/db/schema";
+import { application, applicationEvent } from "../lib/db/schema";
+
+const APP_ID = process.argv[2];
+if (!APP_ID) {
+  console.error("usage: tsx scripts/inspect-app.ts <appId>");
+  process.exit(1);
+}
 
 async function main() {
-  const recent = await db
+  const [a] = await db
     .select({
-      id: application.id,
       status: application.status,
       submittedAt: application.submittedAt,
-      createdAt: application.createdAt,
       attempts: application.attempts,
       failureReason: application.failureReason,
-      company: job.company,
-      title: job.title,
     })
     .from(application)
-    .innerJoin(job, eq(application.jobId, job.id))
-    .where(and(ilike(job.company, "%anthropic%"), ilike(job.title, "%Staff+ Software Engineer, Full-stack%")))
-    .orderBy(desc(application.createdAt))
-    .limit(3);
+    .where(eq(application.id, APP_ID))
+    .limit(1);
 
-  if (recent.length === 0) {
-    console.log("No matching Anthropic Staff+ Full-stack application found.");
-    process.exit(0);
+  console.log(`status=${a?.status}  attempts=${a?.attempts}  submitted=${a?.submittedAt?.toISOString() ?? "—"}`);
+  console.log(`failureReason=${a?.failureReason ?? "—"}`);
+  console.log("");
+
+  const events = await db
+    .select({ step: applicationEvent.step, payload: applicationEvent.payloadJson, createdAt: applicationEvent.createdAt })
+    .from(applicationEvent)
+    .where(eq(applicationEvent.applicationId, APP_ID))
+    .orderBy(desc(applicationEvent.createdAt))
+    .limit(25);
+
+  for (const e of events.reverse()) {
+    const p = JSON.stringify(e.payload).slice(0, 250);
+    console.log(`  ${e.createdAt.toISOString()}  ${e.step}`);
+    if (p !== "{}" && p !== "null") console.log(`    ${p.replace(/imageBase64":"[^"]+/, 'imageBase64":"…"').slice(0, 250)}`);
   }
-
-  for (const r of recent) {
-    console.log(`\nApplication ${r.id}`);
-    console.log(`  ${r.company} — ${r.title}`);
-    console.log(`  status=${r.status}  attempts=${r.attempts}  failureReason=${r.failureReason ?? "—"}`);
-    console.log(`  created ${r.createdAt.toISOString()}`);
-    console.log(`  submitted ${r.submittedAt?.toISOString() ?? "—"}`);
-
-    const events = await db
-      .select({ step: applicationEvent.step, payload: applicationEvent.payloadJson, at: applicationEvent.createdAt })
-      .from(applicationEvent)
-      .where(eq(applicationEvent.applicationId, r.id))
-      .orderBy(applicationEvent.createdAt);
-
-    console.log(`  Events (${events.length}):`);
-    for (const e of events) {
-      console.log(`    ${e.at.toISOString()}  ${e.step}  ${JSON.stringify(e.payload).slice(0, 160)}`);
-    }
-  }
-
   process.exit(0);
 }
 

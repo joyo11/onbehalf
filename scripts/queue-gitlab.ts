@@ -1,13 +1,9 @@
-/**
- * Queue a specific job for real submission. Inserts the application,
- * prints the id, then exits. Caller fires /api/process-queue (no dryRun).
- */
 import { eq } from "drizzle-orm";
 import { db } from "../lib/db/client";
 import { application, user as userTable } from "../lib/db/schema";
 
 const USER_EMAIL = "shafay11august@gmail.com";
-const JOB_ID = "251763dc-2be7-47f5-b85d-699f507103ff"; // Vercel — Software Engineer, Next.js
+const JOB_ID = "048e6fff-e912-4327-9125-0f12e403cc86"; // GitLab — Senior AI Engineer (Remote US)
 
 async function main() {
   const [u] = await db
@@ -16,7 +12,7 @@ async function main() {
     .where(eq(userTable.email, USER_EMAIL))
     .limit(1);
   if (!u) {
-    console.error(`No user ${USER_EMAIL}`);
+    console.error(`No user`);
     process.exit(1);
   }
 
@@ -34,8 +30,7 @@ async function main() {
       target: [application.userId, application.jobId],
       set: {
         status: "queued",
-        // Keep cached tailoring on retry — saves ~30s of Claude time so the
-        // total stays under Vercel's 60s function budget.
+        // Keep cached tailoring on retry
         submittedAt: null,
         failureReason: null,
         attempts: 0,

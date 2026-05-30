@@ -550,13 +550,41 @@ function isUrl(s: string | null | undefined): s is string {
 
 function mapEeoToOption(value: string, kind: "gender" | "hispanic" | "race" | "veteran" | "disability"): string {
   if (value === "decline") {
-    // The exact label varies by board; we'll match against options later
-    // via fuzzy text similarity. Return the most common phrasing.
     if (kind === "disability") return "I do not wish to answer";
     if (kind === "veteran") return "I don't wish to answer";
     return "Decline to self-identify";
   }
-  // Pass-through user-chosen value (e.g. "Female", "Yes, I have a disability")
+  // Translate our internal codes to the phrasing forms actually use.
+  // Forms have 'Male' / 'Female' but users pick 'Man' / 'Woman' in Settings,
+  // and the fuzzy matcher saw them as different words. Translate here.
+  if (kind === "gender") {
+    if (value === "man") return "Male";
+    if (value === "woman") return "Female";
+    if (value === "non_binary") return "Non-binary";
+    if (value === "other") return "Other";
+  }
+  if (kind === "hispanic") {
+    if (value === "yes") return "Yes";
+    if (value === "no") return "No";
+  }
+  if (kind === "race") {
+    if (value === "asian") return "Asian";
+    if (value === "black") return "Black or African American";
+    if (value === "hispanic_latino") return "Hispanic or Latino";
+    if (value === "native_american") return "American Indian or Alaska Native";
+    if (value === "pacific_islander") return "Native Hawaiian or Other Pacific Islander";
+    if (value === "white") return "White";
+    if (value === "two_or_more") return "Two or More Races";
+  }
+  if (kind === "veteran") {
+    if (value === "yes_protected") return "I identify as one or more of the classifications of a protected veteran";
+    if (value === "no") return "I am not a protected veteran";
+  }
+  if (kind === "disability") {
+    if (value === "yes") return "Yes, I have a disability";
+    if (value === "no") return "No, I do not have a disability";
+  }
+  // Pass-through anything we don't know about.
   return value;
 }
 
