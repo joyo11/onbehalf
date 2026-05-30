@@ -3,7 +3,9 @@ import { db } from "../db/client";
 import { application, applicationEvent, job, profile, user as userTable } from "../db/schema";
 import { tailorForJob } from "../tailor";
 import { startSession } from "./browserbase";
+import { fillAshbyForm, isAshbyPage } from "./ashby";
 import { fillGreenhouseForm, isGreenhousePage } from "./greenhouse";
+import { fillLeverForm, isLeverPage } from "./lever";
 import type { SubmissionProfile, SubmissionResult, SubmissionStep } from "./types";
 
 const APPLY_TIMEOUT_MS = 50_000;
@@ -276,7 +278,7 @@ export async function runSubmission(
 
   let session: Awaited<ReturnType<typeof startSession>> | null = null;
   const steps: SubmissionStep[] = [];
-  let ats: "greenhouse" | "lever" | "unknown" = "unknown";
+  let ats: "greenhouse" | "lever" | "ashby" | "unknown" = "unknown";
   let realSubmitted = false;
   let finalUrl = "";
   let liveViewUrl = "";
@@ -312,14 +314,34 @@ export async function runSubmission(
       (await isGreenhousePage(session.page))
     ) {
       ats = "greenhouse";
-    } else if (/lever\.co/.test(finalUrl)) {
+    } else if (
+      row.jobRow.source === "lever" ||
+      /lever\.co/.test(finalUrl) ||
+      (await isLeverPage(session.page))
+    ) {
       ats = "lever";
+    } else if (/ashbyhq\.com/.test(finalUrl) || (await isAshbyPage(session.page))) {
+      ats = "ashby";
     }
 
     await logEvent(applicationId, "ats_detected", { ats });
 
-    if (ats === "greenhouse") {
-      const result = await fillGreenhouseForm(session.page, subProfile);
+    if (ats === "greenhouse" || ats === "lever" || ats === "ashby") {
+      // Job context for the smart-fill fallback (LLM-generated answers for
+      // unknown required fields). jdSummary is the first 1500 chars of the
+      // JD; if jdText is missing we fall back to company+title only.
+      const jdRaw = (row.jobRow as { jdText?: string | null }).jdText ?? "";
+      const jobCtx = {
+        company: row.jobRow.company,
+        title: row.jobRow.title,
+        jdSummary: jdRaw.slice(0, 1500),
+      };
+      const result =
+        ats === "greenhouse"
+          ? await fillGreenhouseForm(session.page, subProfile, jobCtx)
+          : ats === "lever"
+            ? await fillLeverForm(session.page, subProfile, jobCtx)
+            : await fillAshbyForm(session.page, subProfile, jobCtx);
       steps.push(...result.steps);
       for (const s of result.steps) {
         await logEvent(applicationId, s.step, { detail: s.detail, ok: s.ok });
@@ -409,7 +431,7 @@ export async function runSubmission(
     } else {
       await logEvent(applicationId, "ats_unsupported", {
         ats,
-        note: "Only Greenhouse is supported in this phase. Lever + Ashby coming next.",
+        note: "Only Greenhouse and Lever are supported in this phase. Ashby coming next.",
       });
     }
 

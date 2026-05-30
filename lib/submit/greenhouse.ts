@@ -1,6 +1,9 @@
 import type { Locator, Page } from "playwright-core";
 import { renderCoverLetterPdf } from "./cover-letter-pdf";
+import { inferAnswers, type SmartFillContext, type UnknownField } from "./smart-fill";
 import type { SubmissionProfile, SubmissionStep } from "./types";
+
+export type { SmartFillContext, UnknownField } from "./smart-fill";
 
 /**
  * Fill a Greenhouse-hosted application form.
@@ -20,6 +23,7 @@ import type { SubmissionProfile, SubmissionStep } from "./types";
 export async function fillGreenhouseForm(
   page: Page,
   profile: SubmissionProfile,
+  job?: { company: string; title: string; jdSummary: string },
 ): Promise<{ steps: SubmissionStep[]; submitButton: { selector: string } | null }> {
   const steps: SubmissionStep[] = [];
 
@@ -70,10 +74,16 @@ export async function fillGreenhouseForm(
   // pick it.
   await answerAgreementSelects(page, steps);
 
-  // Smart N/A fallback — any required text input still empty at this
-  // point gets "N/A". Form refuses to submit on empty required fields,
-  // and "N/A" is universally accepted for "miscellaneous required" text.
-  await fillEmptyRequiredTextInputs(page, steps);
+  // Smart fallback — any required text/textarea still empty at this point
+  // gets a Claude-generated tailored answer (one batched call). If `job`
+  // wasn't provided, or the LLM call fails, we fall back to literal "N/A"
+  // — better than blank, since the form refuses to submit on empty
+  // required fields.
+  await fillEmptyRequiredTextInputs(
+    page,
+    steps,
+    job ? { profile, job } : undefined,
+  );
 
   // ── Submit button ─────────────────────────────────────────
   await page.waitForTimeout(200);
@@ -602,7 +612,7 @@ async function checkAcknowledgmentBoxes(page: Page, steps: SubmissionStep[]): Pr
  * and re-attempt: click, type the city from profile.location, wait
  * longer for async load, click the first option.
  */
-async function fillCityAutocompletes(
+export async function fillCityAutocompletes(
   page: Page,
   profile: SubmissionProfile,
   steps: SubmissionStep[],
@@ -709,33 +719,162 @@ async function answerAgreementSelects(page: Page, steps: SubmissionStep[]): Prom
 }
 
 /**
- * Final pass — any visible required text input still empty gets "N/A".
- * Form refuses to submit on empty required fields, and "N/A" is the
- * universal "I don't have a real answer for this miscellaneous question"
- * sentinel. Only applies to single-line inputs, NEVER textareas (won't
- * fabricate essays).
+ * Final pass — any visible required text input/textarea still empty gets
+ * a smart, Claude-generated answer (via one batched call). Falls back to
+ * literal "N/A" if no SmartFillContext was supplied, no fields qualify,
+ * or the LLM call fails.
+ *
+ * Greenhouse refuses to submit on empty required fields, so this step is
+ * load-bearing — "N/A" is universally accepted by their validation, but
+ * a real tailored answer is obviously better when we can produce one.
+ *
+ * We now include textareas too: with an LLM in the loop we can produce a
+ * coherent 2-3 sentence response. (The old version excluded textareas to
+ * avoid filling essays with "N/A".)
  */
-async function fillEmptyRequiredTextInputs(page: Page, steps: SubmissionStep[]): Promise<void> {
-  const inputs = await page
-    .locator("input[required][type='text'], input[required]:not([type])")
+export async function fillEmptyRequiredTextInputs(
+  page: Page,
+  steps: SubmissionStep[],
+  ctx?: SmartFillContext,
+): Promise<void> {
+  const inputLocators = await page
+    .locator("input[required][type='text'], input[required]:not([type]), textarea[required]")
     .all();
-  let filled = 0;
-  for (const inp of inputs) {
+
+  type Pending = { locator: Locator; field: UnknownField };
+  const pending: Pending[] = [];
+
+  for (const inp of inputLocators) {
     try {
       if (!(await inp.isVisible().catch(() => false))) continue;
-      const val = await inp.evaluate((el) => (el as HTMLInputElement).value).catch(() => "");
+      const val = await inp
+        .evaluate((el) => (el as HTMLInputElement | HTMLTextAreaElement).value)
+        .catch(() => "");
       if (val && val.trim().length > 0) continue;
-      // Skip file inputs and obvious system fields
+
+      const tag = await inp.evaluate((el) => el.tagName.toLowerCase()).catch(() => "input");
       const type = (await inp.getAttribute("type").catch(() => "")) ?? "text";
       if (type === "file") continue;
-      await inp.fill("N/A", { timeout: 2000 });
-      filled++;
+
+      // One DOM round-trip to grab selector + label + helper text + maxLength.
+      const meta = await inp
+        .evaluate((el) => {
+          const node = el as HTMLInputElement | HTMLTextAreaElement;
+          let selector = "";
+          if (node.id) selector = "#" + CSS.escape(node.id);
+          else if (node.name) selector = node.tagName.toLowerCase() + "[name='" + node.name + "']";
+          else selector = node.tagName.toLowerCase();
+
+          let label = "";
+          if (node.id) {
+            const l = document.querySelector("label[for='" + node.id + "']");
+            if (l) label = (l.textContent ?? "").trim();
+          }
+          if (!label) {
+            const wrap = node.closest("label");
+            if (wrap) label = (wrap.textContent ?? "").trim();
+          }
+          if (!label) {
+            const aria = node.getAttribute("aria-label");
+            if (aria) label = aria.trim();
+          }
+          if (!label) {
+            let parent: Element | null = node.parentElement;
+            for (let i = 0; i < 4 && parent; i++) {
+              const heading = parent.querySelector("label, legend, .question, .label, h3, h4");
+              if (heading && heading.textContent && heading.textContent.trim()) {
+                label = heading.textContent.trim();
+                break;
+              }
+              parent = parent.parentElement;
+            }
+          }
+
+          let helperText: string | undefined;
+          const describedBy = node.getAttribute("aria-describedby");
+          if (describedBy) {
+            const help = document.getElementById(describedBy);
+            if (help && help.textContent) helperText = help.textContent.trim();
+          }
+          if (!helperText && node.parentElement) {
+            const help = node.parentElement.querySelector(".help, .description, small, .helper");
+            if (help && help.textContent && help.textContent.trim()) {
+              helperText = help.textContent.trim();
+            }
+          }
+
+          const maxLengthAttr = node.getAttribute("maxlength");
+          const maxLength = maxLengthAttr ? parseInt(maxLengthAttr, 10) : undefined;
+
+          return {
+            selector,
+            label: label.slice(0, 300),
+            helperText: helperText ? helperText.slice(0, 300) : undefined,
+            maxLength:
+              typeof maxLength === "number" && !Number.isNaN(maxLength) ? maxLength : undefined,
+          };
+        })
+        .catch(() => null);
+
+      if (!meta) continue;
+
+      const kind: "text" | "textarea" = tag === "textarea" ? "textarea" : "text";
+      pending.push({
+        locator: inp,
+        field: {
+          selector: meta.selector,
+          label: meta.label || "(unlabeled field)",
+          helperText: meta.helperText,
+          kind,
+          maxLength: meta.maxLength,
+        },
+      });
     } catch {
       // skip
     }
   }
-  if (filled > 0) {
-    steps.push({ step: "filled_na_fallback", detail: String(filled) + " empty required inputs", ok: true });
+
+  if (pending.length === 0) return;
+
+  let answers = new Map<string, string>();
+  if (ctx) {
+    try {
+      answers = await inferAnswers(
+        pending.map((p) => p.field),
+        ctx,
+      );
+    } catch {
+      answers = new Map();
+    }
+  }
+
+  let smartFilled = 0;
+  let naFilled = 0;
+  for (const p of pending) {
+    const answer = answers.get(p.field.selector);
+    const value = answer && answer.trim().length > 0 ? answer : "N/A";
+    try {
+      await p.locator.fill(value, { timeout: 2000 });
+      if (value === "N/A") naFilled++;
+      else smartFilled++;
+    } catch {
+      // skip
+    }
+  }
+
+  if (smartFilled > 0) {
+    steps.push({
+      step: "filled_smart_fallback",
+      detail: String(smartFilled) + " LLM-generated answers",
+      ok: true,
+    });
+  }
+  if (naFilled > 0) {
+    steps.push({
+      step: "filled_na_fallback",
+      detail: String(naFilled) + " empty required inputs",
+      ok: true,
+    });
   }
 }
 
@@ -744,7 +883,7 @@ function isUrl(s: string | null | undefined): s is string {
   return /^https?:\/\/|^[a-z0-9-]+\.[a-z]{2,}/.test(s.toLowerCase().trim());
 }
 
-function mapEeoToOption(value: string, kind: "gender" | "hispanic" | "race" | "veteran" | "disability" | "sexual_orientation"): string {
+export function mapEeoToOption(value: string, kind: "gender" | "hispanic" | "race" | "veteran" | "disability" | "sexual_orientation"): string {
   if (value === "decline") {
     if (kind === "disability") return "I do not wish to answer";
     if (kind === "veteran") return "I don't wish to answer";
@@ -963,7 +1102,7 @@ async function fillByKind(
  * since labels vary by board ("Decline to self-identify" / "Prefer not to
  * say" / "I do not wish to answer" / "I choose not to disclose").
  */
-async function fillReactSelect(
+export async function fillReactSelect(
   page: Page,
   control: Locator,
   answer: string,

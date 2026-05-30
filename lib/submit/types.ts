@@ -41,7 +41,7 @@ export type SubmissionStep = {
 
 export type SubmissionResult = {
   ok: boolean;
-  ats: "greenhouse" | "lever" | "unknown";
+  ats: "greenhouse" | "lever" | "ashby" | "unknown";
   steps: SubmissionStep[];
   finalUrl: string;
   liveViewUrl: string;
