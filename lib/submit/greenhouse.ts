@@ -1,5 +1,13 @@
 import type { Locator, Page } from "playwright-core";
 import { renderCoverLetterPdf } from "./cover-letter-pdf";
+import { mapEeoToOption } from "./shared/eeo";
+import {
+  answerSynonyms,
+  isBasicField,
+  isDeclineAnswer,
+  isUrl,
+  textSimilarity,
+} from "./shared/text-matching";
 import { inferAnswers, type SmartFillContext, type UnknownField } from "./smart-fill";
 import type { ResolvedField, SubmissionProfile, SubmissionStep } from "./types";
 
@@ -451,10 +459,6 @@ async function fillAllLabelledFields(
     }
   }
   return { filled };
-}
-
-function isBasicField(q: string): boolean {
-  return /^(first name|last name|email|phone|country|resume|cv|cover letter)$/i.test(q.trim());
 }
 
 /* ───────────── question → answer mapping ───────────── */
@@ -1055,10 +1059,6 @@ export async function fillEmptyRequiredTextInputs(
   }
 }
 
-function isUrl(s: string | null | undefined): s is string {
-  if (!s) return false;
-  return /^https?:\/\/|^[a-z0-9-]+\.[a-z]{2,}/.test(s.toLowerCase().trim());
-}
 
 /**
  * Phase 2B (4) — for every visible file input on the page that ISN'T
@@ -1143,56 +1143,9 @@ async function flagUnknownRequiredFileInputs(
   }
 }
 
-export function mapEeoToOption(value: string, kind: "gender" | "hispanic" | "race" | "veteran" | "disability" | "sexual_orientation"): string {
-  if (value === "decline") {
-    if (kind === "disability") return "I do not wish to answer";
-    if (kind === "veteran") return "I don't wish to answer";
-    if (kind === "sexual_orientation") return "I don't wish to answer";
-    return "Decline to self-identify";
-  }
-  if (kind === "sexual_orientation") {
-    if (value === "straight") return "Heterosexual";
-    if (value === "gay") return "Gay";
-    if (value === "lesbian") return "Lesbian";
-    if (value === "bisexual") return "Bisexual";
-    if (value === "queer") return "Queer";
-    if (value === "asexual") return "Asexual";
-    if (value === "pansexual") return "Pansexual";
-    if (value === "other") return "Other";
-  }
-  // Translate our internal codes to the phrasing forms actually use.
-  // Forms have 'Male' / 'Female' but users pick 'Man' / 'Woman' in Settings,
-  // and the fuzzy matcher saw them as different words. Translate here.
-  if (kind === "gender") {
-    if (value === "man") return "Male";
-    if (value === "woman") return "Female";
-    if (value === "non_binary") return "Non-binary";
-    if (value === "other") return "Other";
-  }
-  if (kind === "hispanic") {
-    if (value === "yes") return "Yes";
-    if (value === "no") return "No";
-  }
-  if (kind === "race") {
-    if (value === "asian") return "Asian";
-    if (value === "black") return "Black or African American";
-    if (value === "hispanic_latino") return "Hispanic or Latino";
-    if (value === "native_american") return "American Indian or Alaska Native";
-    if (value === "pacific_islander") return "Native Hawaiian or Other Pacific Islander";
-    if (value === "white") return "White";
-    if (value === "two_or_more") return "Two or More Races";
-  }
-  if (kind === "veteran") {
-    if (value === "yes_protected") return "I identify as one or more of the classifications of a protected veteran";
-    if (value === "no") return "I am not a protected veteran";
-  }
-  if (kind === "disability") {
-    if (value === "yes") return "Yes, I have a disability";
-    if (value === "no") return "No, I do not have a disability";
-  }
-  // Pass-through anything we don't know about.
-  return value;
-}
+// mapEeoToOption moved to ./shared/eeo. Re-export for back-compat —
+// lever.ts and ashby.ts import it from "./greenhouse".
+export { mapEeoToOption } from "./shared/eeo";
 
 /* ───────────── label → input dispatch ───────────── */
 
@@ -1632,25 +1585,6 @@ const DECLINE_SYNONYMS = [
   "Decline to answer",
 ];
 
-function isDeclineAnswer(answer: string): boolean {
-  return /decline|prefer not|wish to answer|not to disclose|not to say/i.test(answer);
-}
-
-function answerSynonyms(answer: string): string[] {
-  // Yes/No expansions so a "Yes" answer also matches "Yes, I am" etc.
-  const a = answer.trim();
-  if (/^yes$/i.test(a)) return ["Yes", "Yes, I am", "Yes I do", "I am", "Affirmative"];
-  if (/^no$/i.test(a))
-    return [
-      "No",
-      "No, I am not",
-      "I am not",
-      "Not at this time",
-      "I am NOT a protected veteran",
-      "I do not have a disability",
-    ];
-  return [];
-}
 
 async function fillRadioGroup(
   page: Page,
@@ -1784,31 +1718,9 @@ async function fillRadioGroup(
   return false;
 }
 
-/* ───────────── text similarity (also exported for tests) ───────────── */
-
-const STOPWORDS = new Set([
-  "the", "and", "for", "you", "are", "with", "that", "this", "what",
-  "have", "your", "from", "will", "any", "our", "can", "into", "would",
-  "describe", "tell", "please", "about", "why", "how", "where", "when",
-  "select", "all", "wish", "answer",
-]);
-
-function textSimilarity(a: string, b: string): number {
-  const wordsOf = (s: string) =>
-    new Set(
-      s
-        .toLowerCase()
-        .replace(/[^a-z0-9 ]/g, " ")
-        .split(/\s+/)
-        .filter((w) => w.length > 2 && !STOPWORDS.has(w)),
-    );
-  const wa = wordsOf(a);
-  const wb = wordsOf(b);
-  if (wa.size === 0 || wb.size === 0) return 0;
-  let overlap = 0;
-  for (const w of wa) if (wb.has(w)) overlap++;
-  return overlap / Math.max(wa.size, wb.size);
-}
+/* textSimilarity / answerSynonyms / isDeclineAnswer / isUrl / isBasicField
+ * live in ./shared/text-matching so both the server filler and the
+ * Chrome extension content script can import them. */
 
 function bestScreener(
   question: string,
