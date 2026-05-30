@@ -99,12 +99,34 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "CAPTURE_TAB") {
     (async () => {
       try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        // Ask the page itself for its viewport dimensions — captureVisibleTab
+        // returns CSS pixels and document.elementFromPoint expects the same,
+        // so the dimensions we capture are what Claude should use to plan
+        // coordinates against.
+        let viewportWidth = null;
+        let viewportHeight = null;
+        if (tab?.id) {
+          try {
+            const [{ result }] = await chrome.scripting.executeScript({
+              target: { tabId: tab.id },
+              func: () => ({ w: window.innerWidth, h: window.innerHeight }),
+            });
+            viewportWidth = result?.w ?? null;
+            viewportHeight = result?.h ?? null;
+          } catch {
+            // best-effort
+          }
+        }
         const dataUrl = await chrome.tabs.captureVisibleTab(undefined, {
           format: "jpeg",
           quality: 70,
         });
         const screenshot = dataUrl.replace(/^data:image\/[^;]+;base64,/, "");
-        sendResponse({ ok: true, body: { screenshot } });
+        sendResponse({
+          ok: true,
+          body: { screenshot, viewportWidth, viewportHeight },
+        });
       } catch (e) {
         sendResponse({
           ok: false,

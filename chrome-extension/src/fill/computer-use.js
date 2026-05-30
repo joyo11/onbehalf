@@ -1,26 +1,27 @@
 /**
- * Phase 7 — Computer Use executor (content-script side).
+ * Phase 7B executor — coordinate-based clicks.
  *
- * Architecture:
- *   1. Popup asks background to capture the visible tab as JPEG
- *   2. Background POSTs to /api/extension/computer-use with screenshot
- *      + applicationId. Server calls Claude Sonnet with vision and
- *      returns a fill plan: PlanAction[]
- *   3. Content script (this file) walks the plan and executes each
- *      action against the live DOM
+ * Replaces the label-walk executor (which couldn't reach React-Select
+ * controls reliably) with elementFromPoint. Claude returns pixel
+ * coordinates from the screenshot it analyzed; we use those directly
+ * to find the right element.
  *
  * Plan action shape (mirrors server):
  *   {
- *     targetLabel: string,    // visible label text Claude saw on the form
- *     action: "type" | "select" | "click" | "abstain",
- *     value: string | null,   // what to type or option text to pick
+ *     fieldName: string,
+ *     action: "type" | "select" | "click" | "check" | "abstain",
+ *     coord: { x: number, y: number },
+ *     value: string | null,
+ *     optionCoord?: { x, y },
  *     reason?: string
  *   }
  *
- * Element matching: we look for the label text on the page using a
- * heuristic walk (label tag, fieldset legend, nearby h3/h4) then
- * resolve the associated input. This is more forgiving than CSS
- * selectors and matches the way Claude was told to identify fields.
+ * Coordinate space: chrome.tabs.captureVisibleTab returns the image
+ * at CSS pixels (the viewport's coordinate system), which is also
+ * what document.elementFromPoint takes. On standard displays they
+ * match 1:1. On high-DPI / Retina displays Chrome reports the
+ * coordinates in CSS pixels regardless of the underlying screen
+ * resolution, so no scaling needed.
  */
 
 (function () {
@@ -30,158 +31,120 @@
     return;
   }
 
-  /**
-   * Find an input/textarea/select-like element associated with a label
-   * whose text matches `targetLabel`. Strategy:
-   *   1. Find every visible label/legend/heading whose text contains
-   *      targetLabel (case-insensitive, asterisks/colons stripped)
-   *   2. For each candidate label, find the related input by:
-   *      a) for[id] attribute on label
-   *      b) nearest sibling input/select/textarea/.select__control
-   *      c) querySelector inside the label's parent container
-   *   3. Return the first match
-   */
-  function findElementForLabel(targetLabel) {
-    const norm = (s) =>
-      (s ?? "")
-        .replace(/[*:]/g, "")
-        .replace(/\s+/g, " ")
-        .trim()
-        .toLowerCase();
-    const target = norm(targetLabel);
-    if (!target) return null;
-
-    const candidates = Array.from(
-      document.querySelectorAll("label, legend, h3, h4, .label, [class*='label' i]"),
-    );
-
-    for (const lbl of candidates) {
-      const text = norm(lbl.textContent ?? "");
-      if (!text) continue;
-      if (!text.includes(target) && !target.includes(text)) continue;
-
-      // (a) for attribute
-      const forId = lbl.getAttribute && lbl.getAttribute("for");
-      if (forId) {
-        const el = document.getElementById(forId);
-        if (el && isVisible(el)) return el;
-      }
-
-      // (b) closest sibling input
-      let sib = lbl.nextElementSibling;
-      let depth = 0;
-      while (sib && depth < 3) {
-        const found =
-          sib.matches?.(
-            "input, textarea, select, [class*='select__control' i], [role='combobox']",
-          )
-            ? sib
-            : sib.querySelector?.(
-                "input, textarea, select, [class*='select__control' i], [role='combobox']",
-              );
-        if (found && isVisible(found)) return found;
-        sib = sib.nextElementSibling;
-        depth++;
-      }
-
-      // (c) parent container search
-      const parent = lbl.parentElement;
-      if (parent) {
-        const inputs = parent.querySelectorAll(
-          "input, textarea, select, [class*='select__control' i], [role='combobox']",
-        );
-        for (const el of inputs) {
-          if (isVisible(el)) return el;
-        }
-        // Or walk up one more level
-        const gp = parent.parentElement;
-        if (gp) {
-          const more = gp.querySelectorAll(
-            "input, textarea, select, [class*='select__control' i], [role='combobox']",
-          );
-          for (const el of more) {
-            if (isVisible(el)) return el;
-          }
-        }
-      }
-    }
-    return null;
-  }
-
-  function isVisible(el) {
-    if (!(el instanceof HTMLElement)) return false;
-    const r = el.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) return false;
-    const cs = window.getComputedStyle(el);
-    return cs.display !== "none" && cs.visibility !== "hidden" && cs.opacity !== "0";
-  }
-
   function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
   }
 
   /**
-   * Type into a text input or textarea.
+   * Find the actually-fillable element at a coordinate. elementFromPoint
+   * can return a label or a div instead of the underlying input — walk
+   * up + sideways to find the real form control.
    */
+  function findFormElementAt(x, y) {
+    let el = document.elementFromPoint(x, y);
+    if (!el) return null;
+    // If we hit a label, find its for= target or nearest input.
+    if (el.tagName === "LABEL") {
+      const forId = el.getAttribute("for");
+      if (forId) {
+        const target = document.getElementById(forId);
+        if (target) return target;
+      }
+      const inside = el.querySelector("input, textarea, select");
+      if (inside) return inside;
+    }
+    // If we hit a wrapper div, look for a form control inside.
+    if (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA" && el.tagName !== "SELECT") {
+      const inside = el.querySelector?.("input, textarea, select");
+      if (inside) return inside;
+    }
+    return el;
+  }
+
+  /**
+   * Determine if an element is a React-Select (or any non-native
+   * combobox-style) dropdown vs a normal input/textarea/select.
+   */
+  function isComboboxLike(el) {
+    if (!el) return false;
+    if (el.tagName === "SELECT") return true;
+    if (el.closest?.("[class*='select__' i]")) return true;
+    if (el.getAttribute?.("role") === "combobox") return true;
+    if (el.matches?.("[class*='Select__control' i], [class*='select__control' i]")) return true;
+    return false;
+  }
+
   async function doType(el, value) {
+    el.scrollIntoView({ behavior: "instant", block: "center" });
+    el.focus();
+    await sleep(50);
     await surface.fill(el, value);
   }
 
   /**
-   * Select an option. Handles both native <select> and React-Select.
-   * Returns true if matched + clicked, false on miss.
+   * For native <select>: set value matching the option text.
+   * For React-Select: click to open, find option by text, click it.
    */
   async function doSelect(el, optionText) {
     const target = (optionText ?? "").trim().toLowerCase();
-    if (!target) return false;
+    if (!target) return { ok: false, reason: "no option text" };
 
-    // Native <select>
     if (el.tagName === "SELECT") {
       for (const o of Array.from(el.options || [])) {
         if (o.text.trim().toLowerCase() === target) {
           el.value = o.value;
           el.dispatchEvent(new Event("change", { bubbles: true }));
-          return true;
+          return { ok: true };
         }
       }
-      return false;
+      return { ok: false, reason: "option not in <select>" };
     }
 
-    // React-Select control — click to open, find option, click it.
-    const isReactSelect =
-      el.matches?.("[class*='select__control' i], [class*='Select__control' i]") ||
-      el.querySelector?.("[class*='placeholder' i]");
-    if (isReactSelect) {
-      el.click();
-      await sleep(280);
-      const optionEls = Array.from(
-        document.querySelectorAll(
-          "[role='option'], [class*='option' i]:not([class*='disabled' i])",
-        ),
-      ).filter(isVisible);
-      const match = optionEls.find(
-        (o) => (o.textContent ?? "").trim().toLowerCase() === target,
-      );
-      if (match) {
-        match.click();
-        await sleep(150);
-        return true;
-      }
-      // close menu
-      document.body.click();
-      return false;
+    // React-Select: click to open, find option element, click it.
+    // Need to click the CONTROL not necessarily what elementFromPoint
+    // returned (which could be a child of the control).
+    const control =
+      el.closest?.("[class*='select__control' i], [class*='Select__control' i]") ?? el;
+    control.scrollIntoView({ behavior: "instant", block: "center" });
+    control.click();
+    await sleep(350); // wait for menu portal to mount
+
+    // Find option whose visible text matches target. Look across the
+    // whole document because React-Select portals the menu to body.
+    const optionEls = Array.from(
+      document.querySelectorAll(
+        "[role='option'], [class*='option' i]:not([class*='disabled' i])",
+      ),
+    ).filter((o) => {
+      const r = o.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    });
+    const match = optionEls.find(
+      (o) => (o.textContent ?? "").trim().toLowerCase() === target,
+    );
+    if (match) {
+      match.click();
+      await sleep(150);
+      return { ok: true };
     }
-    return false;
+    // Try partial match before giving up
+    const partial = optionEls.find((o) =>
+      (o.textContent ?? "").trim().toLowerCase().includes(target),
+    );
+    if (partial) {
+      partial.click();
+      await sleep(150);
+      return { ok: true, partial: true };
+    }
+    // Close menu by pressing Escape
+    document.body.click();
+    return { ok: false, reason: `option "${optionText}" not visible after open` };
   }
 
-  /**
-   * Execute one action from the plan. Returns a structured result so
-   * the popup can render what happened.
-   */
   async function executeAction(action) {
-    const { targetLabel, action: kind, value, reason } = action;
+    const { fieldName, action: kind, coord, value, reason } = action;
     const result = {
-      targetLabel,
+      fieldName,
       action: kind,
       value,
       reason,
@@ -191,22 +154,35 @@
 
     if (kind === "abstain") {
       result.status = "abstained";
-      result.detail = reason ?? "(no reason given)";
+      result.detail = reason ?? "(no reason)";
       return result;
     }
 
-    const el = findElementForLabel(targetLabel);
-    if (!el) {
-      result.status = "not_found";
-      result.detail = "no element matched targetLabel";
+    if (!coord || typeof coord.x !== "number" || typeof coord.y !== "number") {
+      result.status = "bad_coord";
+      result.detail = "coord missing or invalid";
       return result;
     }
+
+    const el = findFormElementAt(coord.x, coord.y);
+    if (!el) {
+      result.status = "not_found";
+      result.detail = `nothing at (${coord.x}, ${coord.y})`;
+      return result;
+    }
+    result.detail = `${el.tagName.toLowerCase()}${el.name ? `[name=${el.name}]` : ""}${el.id ? `#${el.id}` : ""}`;
 
     try {
       if (kind === "type") {
+        // If we landed on a combobox by mistake, the type intent is
+        // probably wrong — fail loud rather than typing garbage.
+        if (isComboboxLike(el)) {
+          result.status = "wrong_action";
+          result.detail = `type at (${coord.x}, ${coord.y}) hit a dropdown — Claude probably meant 'select'`;
+          return result;
+        }
         if (typeof value !== "string") {
           result.status = "bad_value";
-          result.detail = "value missing for type";
           return result;
         }
         await doType(el, value);
@@ -216,14 +192,14 @@
       if (kind === "select") {
         if (typeof value !== "string") {
           result.status = "bad_value";
-          result.detail = "value missing for select";
           return result;
         }
-        const picked = await doSelect(el, value);
-        result.status = picked ? "filled" : "option_not_found";
+        const r = await doSelect(el, value);
+        result.status = r.ok ? (r.partial ? "filled_partial" : "filled") : "option_not_found";
+        if (!r.ok && r.reason) result.detail += ` — ${r.reason}`;
         return result;
       }
-      if (kind === "click") {
+      if (kind === "click" || kind === "check") {
         el.click();
         result.status = "clicked";
         return result;
@@ -237,29 +213,22 @@
     }
   }
 
-  /**
-   * Walk the plan, execute each, return a summary the popup can show.
-   */
   async function executePlan(plan) {
     const results = [];
     for (const action of plan) {
       const r = await executeAction(action);
       results.push(r);
-      // Small pause between actions so React-driven UIs settle. Helps
-      // when filling one field triggers a re-render that affects the
-      // next field we're about to touch.
-      await sleep(80);
+      await sleep(120);
     }
     const summary = {
       total: results.length,
-      filled: results.filter((r) => r.status === "filled").length,
+      filled: results.filter((r) => r.status === "filled" || r.status === "filled_partial").length,
       abstained: results.filter((r) => r.status === "abstained").length,
       notFound: results.filter((r) => r.status === "not_found").length,
-      errored: results.filter((r) => r.status === "errored").length,
+      errored: results.filter((r) => r.status === "errored" || r.status === "bad_coord" || r.status === "wrong_action").length,
     };
     return { results, summary };
   }
 
-  // Expose for content.js to call.
   window.__onbehalfExecutePlan = executePlan;
 })();

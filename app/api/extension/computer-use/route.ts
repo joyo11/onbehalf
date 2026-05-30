@@ -6,76 +6,122 @@ import { db } from "@/lib/db/client";
 import { application, job, profile } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 45;
 
 /**
- * Phase 7 — vision-based fill planner.
+ * Phase 7B — vision + coordinate-based fill planner.
  *
- * Extension captures a screenshot of the current Greenhouse / Lever /
- * Ashby apply page and POSTs it here with the application ID. We hand
- * the image plus a slim profile to Claude Sonnet with vision, ask it
- * to look at the form and return a fill plan as JSON.
+ * Why coordinates instead of label text: tonight we proved the
+ * label-walk executor can't reliably reach React-Selects on Figma's
+ * EEO section. Labels are bound by ID for text inputs but only by
+ * proximity for dropdowns. Proximity-walking the DOM is fragile.
  *
- * The Guy's discipline (2026-05-30 plan): cap at one vision call per
- * fill, not iterative tool-use. Cheaper, faster, and Claude is good
- * enough at understanding a screenshot in one pass to plan the
- * actions ahead of time.
+ * What Claude does:
+ *   - looks at a screenshot of the form
+ *   - given the slim profile + job context, returns a JSON plan with
+ *     pixel coordinates of WHERE to click + WHAT to do
  *
- * Dry-run mode: append ?dryRun=1 (or pass body.dryRun=true) to return
- * a hardcoded plan with no API call. Lets us validate the executor
- * end-to-end before spending a single token.
+ * Action shape (mirrors what the executor expects):
+ *   {
+ *     fieldName: string,            // human label for the popup
+ *     action: "type" | "select" | "click" | "check" | "abstain",
+ *     coord: { x: number, y: number },  // viewport pixel coords
+ *     value: string | null,         // text to type, option text to pick
+ *     optionCoord?: { x, y },       // for select: where the option will
+ *                                    //   appear after the dropdown opens
+ *                                    //   (optional; executor falls back
+ *                                    //   to finding option by text)
+ *     reason?: string
+ *   }
+ *
+ * Dry-run mode (?dryRun=1): returns a fake plan with coordinates that
+ * point at the first ~8 fields on a typical Greenhouse form so we can
+ * validate the executor without spending a token.
  */
 
-type ActionType = "type" | "select" | "click" | "abstain";
+type Coord = { x: number; y: number };
 
 type PlanAction = {
-  // What the agent SEES on the form — used by the extension to find
-  // the right element via label-text match. Examples:
-  //   "First Name", "Email", "Why do you want to join Figma?",
-  //   "Gender (under Voluntary Self-Identification)"
-  targetLabel: string;
-  // What to do with the matched element.
-  action: ActionType;
-  // For type/select: the value to type or option text to pick.
-  // For click: ignored. For abstain: null + reason explains why.
+  fieldName: string;
+  action: "type" | "select" | "click" | "check" | "abstain";
+  coord: Coord;
   value: string | null;
-  // Short rationale — surfaced in the popup so the user can audit.
+  optionCoord?: Coord;
   reason?: string;
 };
 
-const SYSTEM_PROMPT = `You are filling in a job application on behalf of a real candidate. You will be shown a screenshot of the application form and given the candidate's profile + the job context.
+const SYSTEM_PROMPT = `You are filling in a job application on behalf of a real candidate. You will be shown a screenshot of the application form and given the candidate's profile + job context.
 
-Your job: produce a JSON fill plan. For every visible fillable field on the screenshot, output one entry with:
-  - targetLabel: the exact label text on the form (so a downstream executor can find the element). Be precise — include any parent section like "Gender (under Voluntary Self-Identification)" so EEO fields don't get confused with general dropdowns.
-  - action: one of "type" | "select" | "click" | "abstain"
-  - value: for type, the string to type. for select, the EXACT option text from the dropdown. for click, null. for abstain, null.
-  - reason: 5-15 word note explaining the choice. For abstain, explain why.
+Output a JSON array — one entry per fillable field VISIBLE on the screenshot. Each entry:
+  - fieldName: short human label for the field ("First Name", "Gender", "Why Figma?")
+  - action: "type" | "select" | "click" | "check" | "abstain"
+  - coord: { "x": number, "y": number } — the pixel coordinate IN THE SCREENSHOT to click on. Click the text input directly for type, or the closed dropdown control for select.
+  - value: for type, the string. For select, the EXACT option text as it will appear in the dropdown menu. For click/check, null. For abstain, null.
+  - reason: short note explaining the choice
 
-Rules:
-  - Use the candidate's profile fields literally for identity (first/last name, email, phone). Don't paraphrase those.
-  - For free-text textareas ("Why do you want to join X?"), write 3-4 substantive sentences using the profile + job context. No filler openers, no "I am excited to apply."
-  - For dropdowns, abstain if you can't see all the options from the screenshot. Better to abstain than pick wrong.
-  - For EEO fields (Gender, Race, Veteran, Disability), use the eeo* fields in the profile. If a profile field says "decline", choose the "Decline to self-identify" / "I don't wish to answer" option exactly as it appears.
-  - Skip optional fields if the profile doesn't have a value for them. Don't invent.
-  - Output ONLY the JSON array. No prose before or after.
+CRITICAL RULES:
+1. Use profile values literally for identity (first/last name, email, phone). Do NOT paraphrase.
+2. For dropdowns (action: "select"): coord points at the CLOSED dropdown (the bar showing "Select..."), value is the option text the executor should pick after clicking opens the menu.
+3. For EEO selects (Gender, Race, Hispanic, Veteran, Disability), use the profile's eeo* fields. If profile says "decline", pick the literal "Decline to self-identify" / "I don't wish to answer" option exactly as worded in the form.
+4. For required free-text textareas ("Why do you want to join X?"), write 3-4 substantive sentences using profile + job context. NO filler openers ("I am excited to apply") — get to substance.
+5. For COVER LETTER textareas (often labelled "Additional Information") — paste the candidate's coverLetter profile field verbatim. Don't rewrite.
+6. ABSTAIN (action: "abstain") rather than guess when:
+   - The option list for a dropdown isn't visible AND you can't confidently predict which option fits
+   - The field asks something not covered by the profile
+   - The right answer would require interview-style judgment ("describe a project")
+7. Skip optional fields the candidate has no value for. Don't invent.
+8. Pixel coordinates: be PRECISE. Click on the visible input or dropdown control, not a label or a heading.
 
-Format:
+Output ONLY the JSON array, no prose.
+
+Example output shape:
 [
-  { "targetLabel": "First Name", "action": "type", "value": "Mohammad", "reason": "from profile.firstName" },
-  { "targetLabel": "Gender", "action": "select", "value": "Male", "reason": "profile.eeoGender=man" },
-  { "targetLabel": "Pronouns", "action": "abstain", "value": null, "reason": "optional, not in profile" }
+  { "fieldName": "First Name", "action": "type", "coord": {"x": 420, "y": 480}, "value": "Mohammad", "reason": "profile.firstName" },
+  { "fieldName": "Gender", "action": "select", "coord": {"x": 420, "y": 1240}, "value": "Male", "reason": "profile.eeoGender=man" },
+  { "fieldName": "Pronouns", "action": "abstain", "coord": {"x": 0, "y": 0}, "value": null, "reason": "optional, profile has no pronoun preference" }
 ]`;
 
 function dryRunPlan(): PlanAction[] {
-  // Fake plan returned when ?dryRun=1. Lets us validate the executor
-  // without spending a token. Mirrors the shape of a real plan.
+  // Coordinates are best-guesses for a typical Greenhouse layout at
+  // ~1280px wide. Won't be pixel-accurate but should at least land on
+  // the right column. Lets us prove the executor's elementFromPoint
+  // path works.
   return [
-    { targetLabel: "First Name", action: "type", value: "[dry-run] Mohammad", reason: "dry-run scaffold" },
-    { targetLabel: "Last Name", action: "type", value: "[dry-run] Shafay Joyo", reason: "dry-run scaffold" },
-    { targetLabel: "Email", action: "type", value: "[dry-run] shafay11august@gmail.com", reason: "dry-run scaffold" },
-    { targetLabel: "Why do you want to join", action: "type", value: "[dry-run] This would be the Claude-written textarea answer.", reason: "dry-run scaffold" },
-    { targetLabel: "Gender", action: "select", value: "Male", reason: "dry-run scaffold" },
-    { targetLabel: "Pronouns", action: "abstain", value: null, reason: "dry-run scaffold (testing abstain path)" },
+    {
+      fieldName: "First Name",
+      action: "type",
+      coord: { x: 420, y: 460 },
+      value: "[dry-run] Mohammad",
+      reason: "dry-run scaffold",
+    },
+    {
+      fieldName: "Last Name",
+      action: "type",
+      coord: { x: 420, y: 540 },
+      value: "[dry-run] Shafay Joyo",
+      reason: "dry-run scaffold",
+    },
+    {
+      fieldName: "Email",
+      action: "type",
+      coord: { x: 420, y: 620 },
+      value: "[dry-run] shafay11august@gmail.com",
+      reason: "dry-run scaffold",
+    },
+    {
+      fieldName: "Gender",
+      action: "select",
+      coord: { x: 420, y: 1240 },
+      value: "Male",
+      reason: "dry-run scaffold",
+    },
+    {
+      fieldName: "Pronouns",
+      action: "abstain",
+      coord: { x: 0, y: 0 },
+      value: null,
+      reason: "dry-run scaffold (testing abstain path)",
+    },
   ];
 }
 
@@ -90,6 +136,8 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => null)) as {
       applicationId?: string;
       screenshotBase64?: string;
+      viewportWidth?: number;
+      viewportHeight?: number;
       dryRun?: boolean;
     } | null;
     if (!body?.applicationId) {
@@ -97,8 +145,6 @@ export async function POST(req: Request) {
     }
     const isDryRun = dryRunQuery || body.dryRun === true;
 
-    // Verify ownership even on dry-run (no point letting an attacker
-    // poke at this without auth + ownership).
     const [row] = await db
       .select({
         appUserId: application.userId,
@@ -119,11 +165,7 @@ export async function POST(req: Request) {
     }
 
     if (isDryRun) {
-      return NextResponse.json({
-        plan: dryRunPlan(),
-        dryRun: true,
-        tokenCost: 0,
-      });
+      return NextResponse.json({ plan: dryRunPlan(), dryRun: true, tokenCost: 0 });
     }
 
     if (!body.screenshotBase64) {
@@ -166,6 +208,11 @@ export async function POST(req: Request) {
       coverLetter: row.appCoverLetter ?? null,
     };
 
+    const dims =
+      body.viewportWidth && body.viewportHeight
+        ? `Screenshot dimensions: ${body.viewportWidth}px wide × ${body.viewportHeight}px tall. Coordinates you return must be in this viewport's pixel space.`
+        : "Screenshot is in standard viewport coordinates — return coords in the same pixel space.";
+
     const userText = [
       "JOB CONTEXT",
       `Company: ${row.jobCompany}`,
@@ -175,7 +222,9 @@ export async function POST(req: Request) {
       "CANDIDATE PROFILE (JSON)",
       JSON.stringify(slimProfile, null, 2),
       "",
-      "Look at the screenshot below and produce the fill plan. Output JSON only.",
+      dims,
+      "",
+      "Look at the screenshot below and produce the JSON fill plan with coordinate clicks. Output JSON array only.",
     ].join("\n");
 
     const client = new Anthropic();
@@ -222,14 +271,16 @@ export async function POST(req: Request) {
       );
     }
     if (!Array.isArray(plan)) {
-      return NextResponse.json({ error: "Plan must be an array.", usage: response.usage }, { status: 502 });
+      return NextResponse.json(
+        { error: "Plan must be an array.", usage: response.usage },
+        { status: 502 },
+      );
     }
 
     return NextResponse.json({
       plan,
       dryRun: false,
       usage: response.usage,
-      // Rough cost estimate so the popup can surface it.
       tokenCost:
         ((response.usage.input_tokens ?? 0) / 1_000_000) * 3 +
         ((response.usage.output_tokens ?? 0) / 1_000_000) * 15,

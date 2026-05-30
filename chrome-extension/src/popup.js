@@ -95,6 +95,8 @@ async function runVisionFill({ dryRun }) {
   // shares the same Clerk cookie via credentials: 'include', so
   // direct fetch works the same way.
   let screenshotBase64 = null;
+  let viewportWidth = null;
+  let viewportHeight = null;
   if (!dryRun) {
     // For real runs we still need the background to capture the tab
     // (popup context can't see the underlying page). But this is fast
@@ -105,6 +107,8 @@ async function runVisionFill({ dryRun }) {
       return;
     }
     screenshotBase64 = ssResp.body.screenshot;
+    viewportWidth = ssResp.body.viewportWidth;
+    viewportHeight = ssResp.body.viewportHeight;
   }
 
   const path = dryRun
@@ -120,6 +124,8 @@ async function runVisionFill({ dryRun }) {
       body: JSON.stringify({
         applicationId: cachedJob.application.id,
         screenshotBase64,
+        viewportWidth,
+        viewportHeight,
         dryRun,
       }),
     });
