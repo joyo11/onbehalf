@@ -52,3 +52,31 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     })),
   });
 }
+
+/**
+ * Delete an application. Hard delete — the schema cascades to
+ * applicationEvent (lib/db/schema.ts line 271). Ownership-checked so
+ * a user can't remove someone else's row.
+ *
+ * Job rows stay in the scraped jobs table — that's shared scrape data
+ * and removing a user's application shouldn't affect other users'
+ * matches.
+ */
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+
+  const { id } = await params;
+
+  // Ownership check — only delete if the application belongs to this user
+  const deleted = await db
+    .delete(application)
+    .where(and(eq(application.id, id), eq(application.userId, user.id)))
+    .returning({ id: application.id });
+
+  if (deleted.length === 0) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true, deletedId: deleted[0].id });
+}
