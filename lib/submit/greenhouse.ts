@@ -52,6 +52,12 @@ export async function fillGreenhouseForm(
   await page.waitForTimeout(400);
   await fillAllLabelledFields(page, profile, steps);
 
+  // Reddit-style city autocomplete React-Selects need the city name typed
+  // before options load. Walk the page for any visible React-Select that
+  // hasn't been filled and whose label contains 'location' or 'city',
+  // then type the user's city (extracted from profile.location).
+  await fillCityAutocompletes(page, profile, steps);
+
   // Auto-check any "I agree / I acknowledge / I consent" submission checkboxes
   // that sit near the submit button. These are always boilerplate legal
   // acknowledgments — leaving them unchecked is the #1 reason a form
@@ -503,7 +509,7 @@ const profileMap: Array<{
     get: (p) => mapEeoToOption(p.eeoHispanicLatino, "hispanic"),
   },
   {
-    match: /race|ethnicity/i,
+    match: /race|ethnicit/i,
     get: (p) => mapEeoToOption(p.eeoRaceEthnicity, "race"),
   },
   {
@@ -584,6 +590,85 @@ async function checkAcknowledgmentBoxes(page: Page, steps: SubmissionStep[]): Pr
         detail: e instanceof Error ? e.message : "check failed",
         ok: false,
       });
+    }
+  }
+}
+
+/**
+ * Reddit-style city autocomplete: React-Select that loads options
+ * async after the user types 3+ chars. fillReactSelect bailed earlier
+ * with "no options visible" because clicking didn't load options
+ * without typing first. Find these by label text "City" / "Location"
+ * and re-attempt: click, type the city from profile.location, wait
+ * longer for async load, click the first option.
+ */
+async function fillCityAutocompletes(
+  page: Page,
+  profile: SubmissionProfile,
+  steps: SubmissionStep[],
+): Promise<void> {
+  // Extract city from "Brooklyn, NY" or "New York, New York, USA" → first part.
+  const loc = profile.location ?? "";
+  const city = loc.split(",")[0]?.trim() ?? "";
+  if (!city) return;
+
+  // Find any visible React-Select control inside a container whose label
+  // mentions Location or City AND whose value-container shows "Select..."
+  // (i.e. nothing committed yet).
+  const labels = await page
+    .locator("label:visible, legend:visible")
+    .filter({ hasText: /location|city/i })
+    .all();
+
+  for (const labelEl of labels) {
+    try {
+      const container = labelEl
+        .locator("xpath=ancestor::*[self::div or self::fieldset][1]")
+        .first();
+      const control = container
+        .locator(
+          "[class*='select__control' i], [class*='Select__control' i], div[class*='control' i]:has([class*='placeholder' i]), [role='combobox']",
+        )
+        .first();
+      if ((await control.count()) === 0) continue;
+      if (!(await control.isVisible().catch(() => false))) continue;
+
+      // Skip if a value is already committed (look for non-placeholder text)
+      const placeholderEl = container.locator("[class*='placeholder' i]").first();
+      if ((await placeholderEl.count()) === 0) continue; // no placeholder => already filled
+
+      await control.click({ timeout: 2000 });
+      await page.waitForTimeout(150);
+      await page.keyboard.type(city, { delay: 25 });
+      // City autocomplete typically debounces 300-500ms before fetching
+      await page.waitForTimeout(900);
+
+      // Click the first visible option
+      const optionSelectors = [
+        "[role='option']:visible",
+        "[class*='option']:visible:not([class*='disabled' i])",
+        "[class*='Option']:visible:not([class*='disabled' i])",
+      ];
+      let clicked = false;
+      for (const sel of optionSelectors) {
+        const opt = page.locator(sel).first();
+        if ((await opt.count()) === 0) continue;
+        try {
+          await opt.click({ timeout: 1500 });
+          clicked = true;
+          steps.push({ step: "filled_city_autocomplete", detail: city, ok: true });
+          break;
+        } catch {
+          // try next
+        }
+      }
+      if (!clicked) {
+        // No async option appeared — press Enter to commit free-text
+        await page.keyboard.press("Enter").catch(() => {});
+        await page.keyboard.press("Escape").catch(() => {});
+      }
+    } catch {
+      // skip
     }
   }
 }
