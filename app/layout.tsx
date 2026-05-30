@@ -1,18 +1,25 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
-import { Caveat, JetBrains_Mono, Quicksand } from "next/font/google";
+import { Caveat, Fraunces, JetBrains_Mono, Quicksand } from "next/font/google";
 import "./globals.css";
 
-// Primary UI font — rounded chunky display sans, similar to elaichi co.
+// Display — bold soft-serif manifesto headers (elaichi-warm)
+const fraunces = Fraunces({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800", "900"],
+});
+
+// Body — rounded chunky sans
 const quicksand = Quicksand({
-  variable: "--font-inter", // keep the CSS var name; Tailwind's --font-sans already references it
+  variable: "--font-body",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
 
-// Marker / handwritten accent — for signatures, "from us" notes, etc.
+// Handwritten — signatures, agent notes
 const caveat = Caveat({
-  variable: "--font-accent",
+  variable: "--font-hand",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
@@ -39,16 +46,19 @@ export default function RootLayout({
       appearance={{
         variables: {
           colorPrimary: "#0D9488",
-          colorBackground: "#FAFAF7",
-          colorText: "#1A1A1A",
-          colorTextSecondary: "#6B6B6B",
+          colorBackground: "#EFEAD8",
+          colorText: "#1C1B17",
+          colorTextSecondary: "#6B6859",
           fontFamily: "Quicksand, system-ui, sans-serif",
-          borderRadius: "8px",
+          borderRadius: "16px",
         },
       }}
     >
-      <html lang="en" className={`${quicksand.variable} ${caveat.variable} ${jetbrainsMono.variable}`}>
-        <body className="bg-sand text-ink antialiased min-h-screen">{children}</body>
+      <html
+        lang="en"
+        className={`${fraunces.variable} ${quicksand.variable} ${caveat.variable} ${jetbrainsMono.variable}`}
+      >
+        <body className="ob-noise bg-cream text-ink antialiased min-h-screen">{children}</body>
       </html>
     </ClerkProvider>
   );

@@ -1,13 +1,10 @@
 "use client";
 
-/*  Search / Setup — single clean screen. */
-
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, SectionLabel } from "@/components/ui/card";
-import { Chip } from "@/components/ui/chip";
-import { Icon, type IconName } from "@/components/ui/icon";
+import { Ic } from "@/components/ob/icons";
+import { Eyebrow } from "@/components/ob/primitives";
 
 export type SearchDefaults = {
   targetRoles: string[];
@@ -31,38 +28,68 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
   const toggleSize = (s: string) =>
     setSize(size.includes(s) ? size.filter((x) => x !== s) : [...size, s]);
 
+  const onSubmit = () => {
+    void fetch("/api/profile/search-prefs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({
+        targetRoleTitles: keywords,
+        preferredLocations: locations,
+        excludedCompanies: excluded,
+        desiredSalaryMin: salary * 1000,
+      }),
+    }).catch(() => {});
+
+    const params = new URLSearchParams();
+    if (keywords.length > 0) params.set("roles", keywords.join(","));
+    if (locations.length > 0) params.set("locations", locations.join(","));
+    if (salary > 0) params.set("salaryMin", String(salary * 1000));
+    params.set("limit", String(batch));
+    router.push(`/matches?${params.toString()}`);
+  };
+
   return (
-    <div className="px-10 py-9 max-w-[1100px] mx-auto">
-      <div className="flex items-start justify-between">
+    <div className="max-w-[1180px] mx-auto px-9 py-9">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <SectionLabel>New search</SectionLabel>
-          <h1 className="mt-2 text-[30px] font-semibold tracking-[-0.022em]">
+          <Eyebrow tone="teal" className="mb-3">
+            New search
+          </Eyebrow>
+          <h1
+            className="font-display font-black text-ink"
+            style={{ fontSize: "clamp(2rem, 3vw, 2.7rem)", lineHeight: 1.05, letterSpacing: "-0.03em" }}
+          >
             Tell me what you&apos;re looking for.
           </h1>
-          <p className="mt-2 text-[14px] text-mute lh-body max-w-[600px]">
-            I&apos;ll search across Greenhouse, Lever, Ashby, and Workday for the next 48 hours. You can stop me anytime from the dashboard.
+          <p className="mt-3 text-[15px] text-ink-mute lh-body max-w-[640px]">
+            I&apos;ll search Greenhouse, Lever, Ashby, and Workday and queue applications you can review
+            or auto-submit.
           </p>
         </div>
-        <Button variant="ghost" onClick={() => router.push("/dashboard")}>
+        <Link
+          href="/dashboard"
+          className="shrink-0 inline-flex items-center gap-2 rounded-full bg-sand-50 hover:bg-sand-100 border border-sand-200 text-ink-soft text-[14px] font-semibold px-4 py-2 transition-colors"
+        >
           Cancel
-        </Button>
+        </Link>
       </div>
 
-      <div className="mt-10 grid grid-cols-12 gap-8">
-        <div className="col-span-8 space-y-8">
-          <SearchBlock label="Role keywords" hint="Pre-filled from your profile.">
+      <div className="mt-10 grid grid-cols-12 gap-7">
+        <div className="col-span-12 lg:col-span-8 space-y-7">
+          <Block label="Role keywords" hint="Pre-filled from your profile.">
             <ChipInput chips={keywords} onChange={setKeywords} placeholder="Add a role…" tone="accent" />
-          </SearchBlock>
+          </Block>
 
-          <SearchBlock label="Locations" hint="We'll only surface jobs that match these.">
+          <Block label="Locations" hint="We&apos;ll only surface jobs that match these.">
             <ChipInput
               chips={locations}
               onChange={setLocations}
               placeholder="Add a city or 'Remote (Region)'…"
             />
-          </SearchBlock>
+          </Block>
 
-          <SearchBlock label="Minimum base salary">
+          <Block label="Minimum base salary">
             <div className="flex items-center gap-5">
               <div className="flex-1 relative h-10 flex items-center">
                 <input
@@ -72,31 +99,33 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
                   step={5}
                   value={salary}
                   onChange={(e) => setSalary(+e.target.value)}
-                  className="w-full appearance-none h-1.5 rounded-full bg-[#EFEDE7] focus:outline-none"
+                  className="w-full appearance-none h-1.5 rounded-full focus:outline-none"
                   style={{
-                    backgroundImage: `linear-gradient(to right, var(--accent) 0%, var(--accent) ${
+                    backgroundImage: `linear-gradient(to right, #0D9488 0%, #0D9488 ${
                       ((salary - 80) / 320) * 100
-                    }%, #EFEDE7 ${((salary - 80) / 320) * 100}%, #EFEDE7 100%)`,
+                    }%, #EDE7D6 ${((salary - 80) / 320) * 100}%, #EDE7D6 100%)`,
                   }}
                 />
                 <style>{`
                   input[type=range]::-webkit-slider-thumb {
-                    -webkit-appearance: none; appearance: none; width: 18px; height: 18px;
+                    -webkit-appearance: none; appearance: none; width: 20px; height: 20px;
                     border-radius: 50%; background: #fff;
-                    border: 2px solid var(--accent);
-                    box-shadow: 0 1px 3px rgba(0,0,0,.15); cursor: grab;
+                    border: 2px solid #0D9488;
+                    box-shadow: 0 1px 4px rgba(0,0,0,.15); cursor: grab;
                   }
                 `}</style>
               </div>
-              <div className="w-[120px] text-right">
-                <div className="text-[22px] font-semibold tabular-nums">${salary}k</div>
-                <div className="text-[11.5px] text-mute">base / yr</div>
+              <div className="w-[130px] text-right">
+                <div className="font-display font-black text-ink" style={{ fontSize: "2rem", lineHeight: 1, letterSpacing: "-0.02em" }}>
+                  ${salary}k
+                </div>
+                <div className="text-[12px] text-ink-faint mt-1">base / yr</div>
               </div>
             </div>
-          </SearchBlock>
+          </Block>
 
-          <SearchBlock label="Company size">
-            <div className="flex gap-2">
+          <Block label="Company size">
+            <div className="grid grid-cols-3 gap-3">
               {[
                 { v: "Startup", sub: "< 50" },
                 { v: "Mid", sub: "50–500" },
@@ -107,65 +136,67 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
                   <button
                     key={o.v}
                     onClick={() => toggleSize(o.v)}
-                    className={`flex-1 h-14 rounded-sm border text-left px-4 transition-colors ${
-                      active ? "text-white" : "border-line bg-white text-ink hover:border-line-hi"
-                    }`}
-                    style={active ? { background: "var(--accent)", borderColor: "var(--accent)" } : undefined}
+                    className={
+                      "h-14 rounded-xl2 border text-left px-4 transition-colors " +
+                      (active
+                        ? "border-teal-500 bg-teal-500 text-white"
+                        : "border-sand-200 bg-white text-ink hover:border-ink/30")
+                    }
                   >
-                    <div className="text-[13.5px] font-semibold">{o.v}</div>
-                    <div className={`text-[11.5px] ${active ? "text-white/80" : "text-mute"}`}>
+                    <div className="text-[14px] font-bold">{o.v}</div>
+                    <div className={"text-[11.5px] " + (active ? "text-white/85" : "text-ink-faint")}>
                       {o.sub} people
                     </div>
                   </button>
                 );
               })}
             </div>
-          </SearchBlock>
+          </Block>
 
-          <SearchBlock label="Exclude companies">
+          <Block label="Exclude companies">
             <ChipInput
               chips={excluded}
               onChange={setExcluded}
               placeholder="Add a company to never apply to…"
             />
-          </SearchBlock>
+          </Block>
 
-          <SearchBlock label="Batch size" hint="How many to find and process this run.">
+          <Block label="Batch size" hint="How many to find and process this run.">
             <div className="flex items-center gap-5">
-              <div className="inline-flex items-center border border-line rounded-sm bg-white">
+              <div className="inline-flex items-center border border-sand-200 rounded-xl2 bg-white overflow-hidden">
                 <button
                   onClick={() => setBatch(Math.max(1, batch - 1))}
-                  className="w-10 h-10 flex items-center justify-center text-mute hover:text-ink"
+                  className="w-11 h-11 flex items-center justify-center text-ink-mute hover:text-ink hover:bg-sand-50 transition-colors"
                 >
-                  <Icon name="minus" size={14} />
+                  <Ic.minus className="h-3.5 w-3.5" />
                 </button>
-                <div className="w-14 text-center text-[14px] font-semibold tabular-nums">{batch}</div>
+                <div className="w-14 text-center text-[15px] font-bold tabular">{batch}</div>
                 <button
                   onClick={() => setBatch(Math.min(50, batch + 1))}
-                  className="w-10 h-10 flex items-center justify-center text-mute hover:text-ink"
+                  className="w-11 h-11 flex items-center justify-center text-ink-mute hover:text-ink hover:bg-sand-50 transition-colors"
                 >
-                  <Icon name="plus" size={14} />
+                  <Ic.plus className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <span className="text-[13px] text-mute">applications per run · max 50</span>
+              <span className="text-[13px] text-ink-mute">applications per run · max 50</span>
             </div>
-          </SearchBlock>
+          </Block>
 
-          <SearchBlock label="When to submit">
-            <div className="grid grid-cols-3 gap-3">
+          <Block label="When to submit">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <ModeCard
                 active={mode === "review-each"}
                 onClick={() => setMode("review-each")}
                 title="Review each"
                 body="I'll prepare every application. You approve before submit."
-                icon="eye"
+                icon={Ic.eye}
               />
               <ModeCard
                 active={mode === "auto-high"}
                 onClick={() => setMode("auto-high")}
-                title="Auto-submit when match > 85"
+                title="Auto-submit > 85"
                 body="I'll submit the obvious wins. Lower scores wait for you."
-                icon="bolt"
+                icon={Ic.bolt}
                 recommended
               />
               <ModeCard
@@ -173,75 +204,61 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
                 onClick={() => setMode("auto-all")}
                 title="Auto-submit all"
                 body="Trust me with everything in this batch. No review needed."
-                icon="paper-plane"
+                icon={Ic.send}
               />
             </div>
-          </SearchBlock>
+          </Block>
         </div>
 
-        <div className="col-span-4">
-          <Card className="p-6 sticky top-8">
-            <SectionLabel>This run</SectionLabel>
-            <div className="mt-3 text-[15px] font-medium">
-              {batch} {batch === 1 ? "application" : "applications"}
-            </div>
-            <div className="mt-5 space-y-3 text-[13.5px]">
-              <EstimateRow label="Roles" value={String(keywords.length || "—")} />
-              <EstimateRow label="Locations" value={String(locations.length || "—")} />
-              <EstimateRow label="Min salary" value={`$${salary}k`} />
-              <EstimateRow
-                label="Submit mode"
-                value={mode === "review-each" ? "Review" : mode === "auto-high" ? "Auto >85" : "Auto all"}
-              />
-            </div>
-
-            <Button
-              variant="primary"
-              size="lg"
-              className="w-full mt-6"
-              onClick={() => {
-                // Persist current settings back to profile so the next visit
-                // reflects what the user just chose. keepalive: true is
-                // load-bearing — without it the browser kills this request
-                // as soon as router.push() navigates away below.
-                void fetch("/api/profile/search-prefs", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  keepalive: true,
-                  body: JSON.stringify({
-                    targetRoleTitles: keywords,
-                    preferredLocations: locations,
-                    excludedCompanies: excluded,
-                    desiredSalaryMin: salary * 1000,
-                  }),
-                }).catch(() => {});
-
-                const params = new URLSearchParams();
-                if (keywords.length > 0) params.set("roles", keywords.join(","));
-                if (locations.length > 0) params.set("locations", locations.join(","));
-                if (salary > 0) params.set("salaryMin", String(salary * 1000));
-                router.push(`/matches?${params.toString()}`);
-              }}
-              leading={<Icon name="sparkles" size={14} />}
+        <div className="col-span-12 lg:col-span-4">
+          <div className="bg-white rounded-xl3 border border-sand-200 ob-card-shadow p-6 lg:sticky lg:top-9">
+            <Eyebrow>This run</Eyebrow>
+            <p
+              className="font-display font-black text-ink mt-3"
+              style={{ fontSize: "2.4rem", lineHeight: 1, letterSpacing: "-0.025em" }}
             >
-              Find &amp; apply
-            </Button>
-            <p className="mt-3 text-[11.5px] text-mute text-center lh-body">
-              Each application takes about 30–60 seconds end-to-end.
+              {batch}
+              <span className="text-[14px] font-medium text-ink-faint ml-2">
+                {batch === 1 ? "application" : "applications"}
+              </span>
             </p>
-          </Card>
+
+            <ul className="mt-6 space-y-3 text-[13.5px]">
+              <SumRow label="Roles" value={String(keywords.length || "—")} />
+              <SumRow label="Locations" value={String(locations.length || "—")} />
+              <SumRow label="Min salary" value={`$${salary}k`} />
+              <SumRow
+                label="Submit mode"
+                value={
+                  mode === "review-each" ? "Review" : mode === "auto-high" ? "Auto >85" : "Auto all"
+                }
+              />
+            </ul>
+
+            <button
+              onClick={onSubmit}
+              className="group mt-6 w-full inline-flex items-center justify-center gap-2.5 rounded-full bg-teal-500 hover:bg-teal-600 text-white font-semibold text-[15px] py-3.5 transition-colors ob-card-shadow"
+            >
+              <Ic.spark className="h-[18px] w-[18px]" />
+              Find &amp; apply
+              <Ic.arrow className="h-[18px] w-[18px] transition-transform group-hover:translate-x-1" />
+            </button>
+            <p className="mt-3 text-[11.5px] text-ink-faint text-center leading-relaxed">
+              Each application takes 30–60s end-to-end.
+            </p>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function SearchBlock({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+function Block({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
-    <div>
-      <div className="mb-2.5">
-        <div className="text-[13px] font-semibold">{label}</div>
-        {hint && <div className="text-[12px] text-mute mt-0.5">{hint}</div>}
+    <div className="bg-white rounded-xl3 border border-sand-200 ob-card-shadow p-6">
+      <div className="mb-3.5">
+        <p className="text-[14px] font-bold text-ink">{label}</p>
+        {hint && <p className="text-[12.5px] text-ink-mute mt-0.5">{hint}</p>}
       </div>
       {children}
     </div>
@@ -266,27 +283,40 @@ function ChipInput({
     setInput("");
   };
   return (
-    <Card className="p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        {chips.map((c) => (
-          <Chip key={c} tone={tone} onRemove={() => onChange(chips.filter((x) => x !== c))}>
-            {c}
-          </Chip>
-        ))}
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              add(input);
+    <div className="flex flex-wrap items-center gap-2">
+      {chips.map((c) => (
+        <span
+          key={c}
+          className={
+            "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium " +
+            (tone === "accent" ? "bg-teal-50 text-teal-700" : "bg-sand-50 text-ink-soft")
+          }
+        >
+          {c}
+          <button
+            onClick={() => onChange(chips.filter((x) => x !== c))}
+            className={
+              "h-4 w-4 grid place-items-center rounded-full " +
+              (tone === "accent" ? "hover:bg-teal-100" : "hover:bg-sand-100")
             }
-          }}
-          placeholder={placeholder}
-          className="flex-1 min-w-[160px] bg-transparent text-sm outline-none placeholder:text-mute py-1"
-        />
-      </div>
-    </Card>
+          >
+            <Ic.x className="h-2.5 w-2.5" />
+          </button>
+        </span>
+      ))}
+      <input
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            add(input);
+          }
+        }}
+        placeholder={placeholder}
+        className="flex-1 min-w-[160px] bg-transparent text-[14px] outline-none placeholder:text-ink-faint py-1"
+      />
+    </div>
   );
 }
 
@@ -302,47 +332,46 @@ function ModeCard({
   onClick: () => void;
   title: string;
   body: string;
-  icon: IconName;
+  icon: (p: { className?: string }) => React.JSX.Element;
   recommended?: boolean;
 }) {
+  const Icon = icon;
   return (
     <button
       onClick={onClick}
-      className={`relative text-left p-4 rounded-md border transition-colors ${
-        active ? "bg-white" : "bg-white hover:border-line-hi border-line"
-      }`}
-      style={active ? { borderColor: "var(--accent)", boxShadow: "inset 0 0 0 1px var(--accent)" } : undefined}
+      className={
+        "relative text-left p-4 rounded-xl2 border transition-colors " +
+        (active
+          ? "bg-teal-50 border-teal-500"
+          : "bg-white border-sand-200 hover:border-ink/30")
+      }
     >
       {recommended && (
-        <span
-          className="absolute -top-2 right-3 px-1.5 py-0.5 text-[9.5px] uppercase tracking-[0.06em] font-semibold rounded-sm"
-          style={{ background: "var(--accent)", color: "#fff" }}
-        >
+        <span className="absolute -top-2 right-3 px-1.5 py-0.5 text-[9.5px] uppercase tracking-[0.08em] font-bold rounded-sm bg-teal-500 text-white">
           Recommended
         </span>
       )}
       <div className="flex items-center gap-2">
         <span
-          className="w-7 h-7 rounded-sm flex items-center justify-center"
-          style={{
-            background: active ? "var(--accent-soft)" : "#F2F1EC",
-            color: active ? "var(--accent-hi)" : "#6B6B6B",
-          }}
+          className={
+            "h-7 w-7 rounded-xl2 flex items-center justify-center " +
+            (active ? "bg-teal-500 text-white" : "bg-sand-50 text-ink-mute")
+          }
         >
-          <Icon name={icon} size={14} />
+          <Icon className="h-[15px] w-[15px]" />
         </span>
-        <span className="text-[13.5px] font-semibold">{title}</span>
+        <span className="text-[14px] font-bold text-ink">{title}</span>
       </div>
-      <div className="mt-2 text-[12px] text-mute lh-body">{body}</div>
+      <div className="mt-2 text-[12.5px] text-ink-mute leading-relaxed">{body}</div>
     </button>
   );
 }
 
-function EstimateRow({ label, value }: { label: string; value: string }) {
+function SumRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-mute">{label}</span>
-      <span className="font-medium tabular-nums">{value}</span>
-    </div>
+    <li className="flex items-center justify-between">
+      <span className="text-ink-mute">{label}</span>
+      <span className="font-bold tabular text-ink">{value}</span>
+    </li>
   );
 }

@@ -156,19 +156,27 @@ function PageHeader({
     <div className="pt-9 pb-5">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-[22px] font-semibold tracking-tight text-ink">Application Tracker</h1>
-          <p className="text-[13px] text-ink-soft mt-1">
+          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-teal-600 mb-3">
+            Tracker
+          </p>
+          <h1
+            className="font-display font-black text-ink"
+            style={{ fontSize: "clamp(2rem, 3vw, 2.7rem)", lineHeight: 1.05, letterSpacing: "-0.03em" }}
+          >
+            Application Tracker
+          </h1>
+          <p className="text-[14px] text-ink-mute mt-2.5">
             <span className="tabular text-ink">{total}</span> application{total === 1 ? "" : "s"} ·
             Last updated <span className="tabular">{fmtLastUpdated(lastUpdated)}</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="md" leading={<Icon name="refresh-cw" size={14} />}>
-            Refresh
-          </Button>
-          <Button variant="secondary" size="md" leading={<Icon name="download" size={14} />} onClick={onExport}>
-            Export to Excel
-          </Button>
+          <button
+            onClick={onExport}
+            className="inline-flex items-center gap-2 rounded-full bg-white hover:bg-sand-50 border border-sand-200 text-ink text-[13px] font-semibold px-4 py-2 transition-colors"
+          >
+            <Icon name="download" size={14} /> Export
+          </button>
         </div>
       </div>
     </div>
@@ -646,23 +654,23 @@ function EmptyResults() {
 
 function EmptyTracker() {
   return (
-    <div className="mt-4 bg-white border border-line rounded-card shadow-subtle">
+    <div className="mt-4 bg-white border border-sand-200 rounded-xl3 ob-card-shadow">
       <div className="py-20 px-6 flex flex-col items-center text-center">
-        <div className="h-14 w-14 rounded-card border border-line bg-[#FCFBF6] flex items-center justify-center mb-4">
-          <Icon name="inbox" size={22} className="text-ink-soft" />
+        <div className="h-14 w-14 rounded-xl2 border border-sand-200 bg-sand-50 flex items-center justify-center mb-4">
+          <Icon name="inbox" size={22} className="text-ink-mute" />
         </div>
-        <h2 className="text-[16px] font-semibold text-ink">No applications yet</h2>
-        <p className="text-[13.5px] text-ink-soft mt-1.5 max-w-md">
-          Once you start a search, applications will appear here as Onbehalf finds, tailors, and submits them.
-          You&apos;ll see every change and every confirmation.
+        <h2 className="font-display font-bold text-[19px] text-ink">No applications yet</h2>
+        <p className="text-[14px] text-ink-mute mt-2 max-w-md leading-relaxed">
+          Once you start a search, applications appear here as the agent finds, tailors, and submits
+          them. You&apos;ll see every change and every confirmation.
         </p>
-        <div className="mt-5">
-          <Link href="/search">
-            <Button variant="primary" size="md" leading={<Icon name="search" size={14} />}>
-              Start a new search
-            </Button>
-          </Link>
-        </div>
+        <Link
+          href="/search"
+          className="mt-6 inline-flex items-center gap-2 rounded-full bg-teal-500 hover:bg-teal-600 text-white font-semibold text-[15px] px-5 py-2.5 transition-colors ob-card-shadow"
+        >
+          <Icon name="search" size={14} />
+          Start a new search
+        </Link>
       </div>
     </div>
   );

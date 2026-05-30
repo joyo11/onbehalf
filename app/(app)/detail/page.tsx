@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, SectionLabel } from "@/components/ui/card";
-import { Icon, type IconName } from "@/components/ui/icon";
-import { Monogram } from "@/components/ui/monogram";
-import { StatusPill } from "@/components/ui/status-pill";
+import { Ic } from "@/components/ob/icons";
+import {
+  brandFor,
+  CompanyTile,
+  ConfettiBurst,
+  Eyebrow,
+  StatusPill,
+} from "@/components/ob/primitives";
 import type { Status } from "@/lib/types";
 
 type EventRow = {
@@ -50,14 +53,15 @@ function DetailInner() {
   const id = sp.get("id");
   const [data, setData] = useState<DetailPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confetti, setConfetti] = useState(false);
   const submitFiredRef = useRef(false);
+  const confettiFiredRef = useRef(false);
 
   useEffect(() => {
     if (!id) {
       setError("No application selected.");
       return;
     }
-
     if (!submitFiredRef.current) {
       submitFiredRef.current = true;
       fetch("/api/submit", {
@@ -66,7 +70,6 @@ function DetailInner() {
         body: JSON.stringify({ applicationId: id }),
       }).catch(() => {});
     }
-
     let cancelled = false;
     async function tick() {
       try {
@@ -78,9 +81,18 @@ function DetailInner() {
           return;
         }
         const json = (await res.json()) as DetailPayload;
-        if (!cancelled) setData(json);
+        if (cancelled) return;
+        setData(json);
+        if (
+          (json.application.status === "submitted" || json.application.status === "confirmed") &&
+          !confettiFiredRef.current
+        ) {
+          confettiFiredRef.current = true;
+          setConfetti(true);
+          setTimeout(() => setConfetti(false), 1900);
+        }
       } catch {
-        // network blip — try again next tick
+        // try again next tick
       }
     }
     void tick();
@@ -93,16 +105,18 @@ function DetailInner() {
 
   if (error) {
     return (
-      <div className="px-10 py-16 max-w-[760px] mx-auto">
-        <Card className="p-8 text-center">
-          <Icon name="alert-circle" size={22} className="text-error mx-auto" />
-          <h2 className="text-[17px] font-semibold mt-3">{error}</h2>
+      <div className="max-w-[760px] mx-auto px-9 py-16">
+        <div className="bg-white rounded-xl3 border border-sand-200 ob-card-shadow p-8 text-center">
+          <h2 className="font-display font-bold text-[17px]">{error}</h2>
           <div className="mt-5">
-            <Link href="/tracker">
-              <Button variant="secondary">Back to tracker</Button>
+            <Link
+              href="/tracker"
+              className="inline-flex items-center gap-2 rounded-full bg-sand-50 hover:bg-sand-100 border border-sand-200 text-ink-soft font-semibold text-[14px] px-5 py-2.5 transition-colors"
+            >
+              Back to tracker
             </Link>
           </div>
-        </Card>
+        </div>
       </div>
     );
   }
@@ -115,93 +129,253 @@ function DetailInner() {
       | null
       | undefined
   )?.liveViewUrl;
-  const terminal = ["submitted", "failed", "needsHuman", "confirmed"].includes(data.application.status);
+
+  const showThanks = data.application.status === "submitted" || data.application.status === "confirmed";
+  const step = mapStatusToStep(data.application.status);
+  const brand = brandFor(data.job.company);
 
   return (
-    <div className="px-10 py-9 max-w-[1100px] mx-auto">
-      <Header app={data.application} job={data.job} />
-      <div className="mt-7 grid grid-cols-12 gap-6">
-        <div className="col-span-7">
-          <SectionLabel className="mb-3">Live progress</SectionLabel>
-          <Card className="p-5">
-            <ol className="space-y-3">
-              {data.events.length === 0 ? (
-                <li className="text-[13px] text-mute">Waiting for the agent to start…</li>
-              ) : (
-                data.events.map((e) => <Event key={e.id} e={e} />)
-              )}
-              {!terminal && (
-                <li className="text-[12.5px] text-mute flex items-center gap-2 mt-2">
-                  <span
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{
-                      background: "var(--accent)",
-                      animation: "pulse-dot 1.6s ease-in-out infinite",
-                    }}
-                  />
-                  Agent is working…
-                </li>
-              )}
-            </ol>
-          </Card>
+    <div className="max-w-[1180px] mx-auto px-9 py-8">
+      <Link
+        href="/dashboard"
+        className="inline-flex items-center gap-2 text-[14px] font-semibold text-ink-mute hover:text-ink transition-colors mb-6"
+      >
+        <Ic.back className="h-4 w-4" /> Back to dashboard
+      </Link>
+
+      <div
+        className="ob-hand-in font-hand text-teal-700 mb-1 ml-1"
+        style={{ fontSize: "1.5rem", transform: "rotate(-1.5deg)" }}
+      >
+        Your agent is working ✦
+      </div>
+      <div className="flex items-end justify-between gap-6 mb-7">
+        <div className="flex items-center gap-4 min-w-0">
+          <CompanyTile letter={brand.letter} color={brand.color} size={52} radius={14} />
+          <div className="min-w-0">
+            <h1
+              className="font-display font-black text-ink leading-[1.12]"
+              style={{ fontSize: "clamp(1.45rem, 2.1vw, 1.9rem)", letterSpacing: "-0.02em" }}
+            >
+              {data.job.title}
+            </h1>
+            <p className="text-[14px] text-ink-mute mt-1.5">
+              {data.job.company}
+              {data.job.location ? ` · ${data.job.location}` : ""}
+            </p>
+          </div>
         </div>
-        <div className="col-span-5">
-          <SectionLabel className="mb-3">Watch live</SectionLabel>
-          <Card className="p-5">
-            {liveViewUrl ? (
-              <>
-                <p className="text-[13px] text-ink/85 lh-body">
-                  Open the Browserbase live view to watch the agent fill the form in real time.
-                </p>
-                <a
-                  href={liveViewUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-4 inline-flex items-center gap-2 h-9 px-3.5 text-[13px] rounded-ctrl border border-line bg-white hover:border-ink/30 transition-colors"
-                >
-                  <Icon name="external-link" size={13} /> Open live view
-                </a>
-              </>
-            ) : (
-              <p className="text-[13px] text-mute lh-body">
-                Live view URL will appear when the Browserbase session starts.
-              </p>
-            )}
-          </Card>
-        </div>
+        <StatusPill status={data.application.status} />
       </div>
 
-      <div className="mt-10 flex items-center justify-between">
-        <Link href="/tracker">
-          <Button
-            variant="ghost"
-            leading={<Icon name="chevron-right" size={13} className="rotate-180" />}
-          >
-            Back to tracker
-          </Button>
-        </Link>
-        <a href={data.job.applyUrl} target="_blank" rel="noreferrer">
-          <Button variant="secondary" leading={<Icon name="external-link" size={13} />}>
-            View original posting
-          </Button>
-        </a>
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_350px] gap-6 items-start">
+        {/* LEFT: live browser session view */}
+        <div className="relative">
+          <ConfettiBurst fire={confetti} />
+
+          <div className="rounded-xl3 overflow-hidden border border-sand-200 ob-card-shadow-lg bg-white">
+            {/* browser chrome */}
+            <div className="flex items-center gap-3 px-4 h-11 bg-[#2A2A2A]">
+              <div className="flex gap-1.5">
+                <span className="h-3 w-3 rounded-full bg-[#FF5F57]" />
+                <span className="h-3 w-3 rounded-full bg-[#FEBC2E]" />
+                <span className="h-3 w-3 rounded-full bg-[#28C840]" />
+              </div>
+              <div className="flex-1 mx-2 h-6 rounded-md bg-[#3D3D3D] flex items-center px-3 gap-2">
+                <Ic.shield className="h-3 w-3 text-slate-400" />
+                <span className="font-mono text-[11px] text-slate-300 truncate">
+                  {data.job.applyUrl}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 rounded-full bg-teal-500/20 px-2.5 py-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-teal-400 ob-blink" />
+                <span className="text-[10px] font-bold text-teal-300 tracking-wide">BROWSERBASE</span>
+              </div>
+            </div>
+
+            {/* live view embed area */}
+            <div className="relative bg-[#F7F8FA] p-6 h-[420px] flex flex-col items-center justify-center text-center">
+              {liveViewUrl ? (
+                <>
+                  <div className="h-14 w-14 rounded-full bg-teal-50 border-2 border-teal-200 grid place-items-center mb-4">
+                    <Ic.eye className="h-7 w-7 text-teal-600" />
+                  </div>
+                  <p className="font-display font-bold text-ink text-[19px] mb-2">
+                    Live browser session is up
+                  </p>
+                  <p className="text-[14px] text-ink-mute max-w-[40ch] mb-5 leading-relaxed">
+                    Watch the agent fill the application form in real time. The link below is a
+                    full-screen Browserbase inspector.
+                  </p>
+                  <a
+                    href={liveViewUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 rounded-full bg-ink hover:bg-ink-soft text-white text-[14px] font-semibold px-5 py-2.5 transition-colors"
+                  >
+                    Open live view <Ic.ext className="h-4 w-4" />
+                  </a>
+                </>
+              ) : (
+                <>
+                  <div className="h-12 w-12 rounded-full border-2 border-teal-200 border-t-teal-500 animate-spin mb-4" />
+                  <p className="text-[15px] font-medium text-ink-mute">
+                    {step === 0 ? "Opening the application…" : "Tailoring your resume first…"}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 flex items-center justify-between rounded-xl3 bg-white border border-sand-200 ob-card-shadow px-5 py-3.5">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-xl2 bg-teal-50 border border-teal-100 grid place-items-center">
+                <Ic.eye className="h-[18px] w-[18px] text-teal-600" />
+              </div>
+              <div>
+                <p className="text-[14px] font-semibold text-ink">Live browser session</p>
+                <p className="text-[12px] text-ink-faint">
+                  Powered by Browserbase · watch every keystroke
+                </p>
+              </div>
+            </div>
+            {liveViewUrl ? (
+              <a
+                href={liveViewUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 inline-flex items-center gap-2 rounded-full bg-ink hover:bg-ink-soft text-white text-[13px] font-semibold px-4 py-2 whitespace-nowrap transition-colors"
+              >
+                Open live view <Ic.ext className="h-3.5 w-3.5" />
+              </a>
+            ) : (
+              <span className="text-[12px] text-ink-faint">Waiting for session…</span>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT: progress + payoff */}
+        <div className="space-y-5">
+          <div className="bg-white rounded-xl3 border border-sand-200 ob-card-shadow p-6">
+            <div className="flex items-center justify-between mb-5">
+              <p className="font-display font-bold text-ink text-[17px]">Progress</p>
+              <span className="font-mono text-[12px] text-ink-faint">
+                step {Math.min(step + 1, PIPELINE.length)} / {PIPELINE.length}
+              </span>
+            </div>
+            {PIPELINE.map((s, i) => (
+              <TimelineStep key={s.key} s={s} idx={i} step={step} />
+            ))}
+          </div>
+
+          {showThanks && (
+            <div className="ob-sticker relative bg-teal-50 border border-teal-200 rounded-xl3 p-6 origin-top-left">
+              <div className="absolute -top-3 -right-3 h-11 w-11 rounded-full bg-teal-500 text-white grid place-items-center ob-card-shadow">
+                <Ic.check className="h-6 w-6" />
+              </div>
+              <Eyebrow tone="teal" className="mb-2">
+                Submitted for real
+              </Eyebrow>
+              <p
+                className="font-display font-bold text-teal-800 leading-tight"
+                style={{ fontSize: "1.4rem", letterSpacing: "-0.01em" }}
+              >
+                Done — your application is in at {data.job.company}.
+              </p>
+              <p className="text-[13px] text-teal-700/80 mt-2 leading-relaxed">
+                {data.application.status === "confirmed"
+                  ? "Confirmation email arrived. Go back to sleep."
+                  : "I'll watch your inbox and mark it Confirmed the moment they reply."}
+              </p>
+              <p className="font-hand text-ink-mute mt-3 text-right" style={{ fontSize: "1.5rem" }}>
+                — your agent ♥
+              </p>
+            </div>
+          )}
+
+          {data.application.tailoringSummary && (
+            <div className="bg-white rounded-xl3 border border-sand-200 ob-card-shadow p-6">
+              <Eyebrow tone="teal" className="mb-3">
+                What I tailored
+              </Eyebrow>
+              <p className="text-[13px] text-ink-soft leading-relaxed">
+                {data.application.tailoringSummary}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function Header({ app, job }: { app: DetailPayload["application"]; job: DetailPayload["job"] }) {
+/* ── pipeline ─────────────────────────────────────────────── */
+type PipelineStep = { key: string; title: string; log: string };
+const PIPELINE: PipelineStep[] = [
+  { key: "queued", title: "Queued", log: "Picked up from your matches" },
+  { key: "tailoring", title: "Tailoring", log: "Rewriting bullets in your voice" },
+  { key: "submitting", title: "Submitting", log: "Filling the application form" },
+  { key: "submitted", title: "Submitted", log: "Sent — watching inbox for confirmation" },
+];
+
+function mapStatusToStep(status: Status): number {
+  switch (status) {
+    case "queued":
+    case "draft":
+    case "pending":
+      return 0;
+    case "tailoring":
+      return 1;
+    case "submitting":
+      return 2;
+    case "submitted":
+    case "confirmed":
+      return 3;
+    case "failed":
+    case "needsHuman":
+      return 2;
+    default:
+      return 0;
+  }
+}
+
+function TimelineStep({ s, idx, step }: { s: PipelineStep; idx: number; step: number }) {
+  const state = idx < step ? "done" : idx === step ? "current" : "todo";
   return (
-    <div className="flex items-start gap-5">
-      <Monogram name={job.company} size={56} />
-      <div className="flex-1">
-        <div className="flex items-center gap-2">
-          <h1 className="text-[24px] font-semibold tracking-[-0.018em]">{job.title}</h1>
-          <StatusPill status={app.status} />
+    <div className="flex gap-3.5">
+      <div className="flex flex-col items-center">
+        <div
+          className={
+            "h-7 w-7 rounded-full grid place-items-center shrink-0 transition-all duration-500 " +
+            (state === "done"
+              ? "bg-teal-500 text-white"
+              : state === "current"
+                ? "bg-teal-50 border-2 border-teal-500 text-teal-600"
+                : "bg-sand-100 border border-sand-200 text-ink-faint")
+          }
+        >
+          {state === "done" ? (
+            <Ic.check className="h-4 w-4" />
+          ) : state === "current" ? (
+            <span className="h-2 w-2 rounded-full bg-teal-500 ob-dot-pulse" />
+          ) : (
+            <span className="text-[11px] font-bold">{idx + 1}</span>
+          )}
         </div>
-        <div className="text-[13.5px] text-mute mt-1">
-          {job.company} {job.location ? `· ${job.location}` : ""}
-        </div>
+        {idx < PIPELINE.length - 1 && (
+          <div
+            className={"w-0.5 flex-1 my-1 rounded " + (idx < step ? "bg-teal-400" : "bg-sand-200")}
+            style={{ minHeight: 26 }}
+          />
+        )}
+      </div>
+      <div
+        className={
+          "pb-5 transition-opacity duration-500 " + (state === "todo" ? "opacity-45" : "opacity-100")
+        }
+      >
+        <p className="font-semibold text-ink text-[15px] leading-tight">{s.title}</p>
+        <p className="text-[13px] text-ink-mute mt-0.5">{s.log}</p>
       </div>
     </div>
   );
@@ -209,72 +383,19 @@ function Header({ app, job }: { app: DetailPayload["application"]; job: DetailPa
 
 function DetailSkeleton() {
   return (
-    <div className="px-10 py-9 max-w-[1100px] mx-auto">
+    <div className="max-w-[1180px] mx-auto px-9 py-9">
       <div className="flex items-center gap-5">
-        <div className="shimmer w-14 h-14 rounded-md" />
+        <div className="shimmer w-14 h-14 rounded-xl2" />
         <div className="flex-1">
           <div className="shimmer h-6 w-1/2 rounded" />
           <div className="shimmer h-3 w-1/3 mt-2 rounded" />
         </div>
       </div>
-      <Card className="mt-6 p-5 space-y-3">
+      <div className="mt-6 bg-white rounded-xl3 border border-sand-200 p-5 space-y-3">
         {Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="shimmer h-3 w-full rounded" />
         ))}
-      </Card>
+      </div>
     </div>
-  );
-}
-
-const STEP_LABELS: Record<string, { label: string; icon: IconName }> = {
-  submission_started: { label: "Submission started", icon: "play" },
-  session_started: { label: "Browserbase session live", icon: "globe" },
-  page_loaded: { label: "Apply page loaded", icon: "external-link" },
-  ats_detected: { label: "ATS detected", icon: "check-circle" },
-  uploaded_resume: { label: "Resume uploaded", icon: "upload" },
-  screenshot: { label: "Screenshot taken", icon: "eye" },
-  demo_skipped_submit: { label: "Demo mode — Submit skipped", icon: "shield" },
-  submit_clicked: { label: "Submit button clicked", icon: "paper-plane" },
-  error: { label: "Error", icon: "alert-circle" },
-  ats_unsupported: { label: "ATS not yet supported", icon: "alert-circle" },
-};
-
-function Event({ e }: { e: EventRow }) {
-  const meta = STEP_LABELS[e.step];
-  const label =
-    meta?.label ??
-    (e.step.startsWith("filled_") ? `Filled: ${e.step.replace("filled_", "")}` : e.step);
-  const icon: IconName = meta?.icon ?? "check";
-  const detail =
-    e.payload && typeof e.payload === "object"
-      ? (e.payload as Record<string, unknown>).detail
-      : null;
-  const isError = e.step === "error" || e.step.startsWith("failed_");
-  const t = new Date(e.createdAt);
-
-  return (
-    <li className="flex items-start gap-3">
-      <div
-        className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5"
-        style={
-          isError
-            ? { background: "#FBE9E9", color: "#9C2222" }
-            : { background: "var(--accent-soft)", color: "var(--accent-hi)" }
-        }
-      >
-        <Icon name={icon} size={12} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-[13.5px] text-ink">{label}</div>
-        {detail !== null && detail !== undefined && (
-          <div className="text-[12px] text-mute lh-body truncate" title={String(detail)}>
-            {String(detail)}
-          </div>
-        )}
-      </div>
-      <div className="text-[11px] tabular text-ink-faint shrink-0">
-        {t.toLocaleTimeString("en-US", { hour12: false })}
-      </div>
-    </li>
   );
 }
