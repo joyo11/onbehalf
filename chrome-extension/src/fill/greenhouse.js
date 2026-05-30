@@ -71,22 +71,46 @@
   /**
    * Find a cover-letter file input. Greenhouse's standard shape is a
    * second file input with name/id containing "cover_letter" or
-   * "cover-letter".
+   * "cover-letter". Returns a tag describing how it was filled:
+   *   "file" — uploaded into a file input
+   *   "textarea" — pasted into the Additional Information / Cover
+   *                letter textarea (Figma and others have no file
+   *                input — only a free-text box)
+   *   null — neither found
    */
-  async function uploadCoverLetter(filename, bytes) {
-    const selectors = [
-      "input[type='file'][name*='cover_letter' i]",
-      "input[type='file'][name*='cover-letter' i]",
-      "input[type='file'][id*='cover_letter' i]",
-    ];
-    for (const sel of selectors) {
-      const matches = await surface.$$(sel);
-      for (const el of matches) {
-        await surface.setFile(el, filename, bytes, "application/pdf");
-        return true;
+  async function uploadCoverLetter(filename, bytes, text) {
+    if (bytes && filename) {
+      const selectors = [
+        "input[type='file'][name*='cover_letter' i]",
+        "input[type='file'][name*='cover-letter' i]",
+        "input[type='file'][id*='cover_letter' i]",
+      ];
+      for (const sel of selectors) {
+        const matches = await surface.$$(sel);
+        for (const el of matches) {
+          await surface.setFile(el, filename, bytes, "application/pdf");
+          return "file";
+        }
       }
     }
-    return false;
+    // Fallback: paste the cover letter text into a labelled textarea.
+    // Figma and most newer Greenhouse forms drop the dedicated file
+    // input and present an "Additional Information" or "Cover Letter"
+    // textarea instead.
+    if (text) {
+      const textareas = await surface.$$("textarea");
+      for (const ta of textareas) {
+        if (!(await surface.isVisible(ta))) continue;
+        const existing = await surface.getValue(ta);
+        if (existing && existing.trim().length > 0) continue;
+        const label = (await surface.labelFor(ta)).toLowerCase();
+        if (/cover letter|additional info|anything else|share more|tell us more about/i.test(label)) {
+          await surface.fill(ta, text);
+          return "textarea";
+        }
+      }
+    }
+    return null;
   }
 
   /**
@@ -161,10 +185,17 @@
       }
     }
 
-    if (profile.coverLetter && profile.coverLetter.bytes) {
-      const bytes = base64ToBytes(profile.coverLetter.bytes);
-      if (await uploadCoverLetter(profile.coverLetter.filename, bytes)) {
-        filled.push({ field: "cover_letter", value: profile.coverLetter.filename });
+    if (profile.coverLetter) {
+      const bytes = profile.coverLetter.bytes ? base64ToBytes(profile.coverLetter.bytes) : null;
+      const how = await uploadCoverLetter(
+        profile.coverLetter.filename,
+        bytes,
+        profile.coverLetter.text,
+      );
+      if (how === "file") {
+        filled.push({ field: "cover_letter (file)", value: profile.coverLetter.filename });
+      } else if (how === "textarea") {
+        filled.push({ field: "cover_letter (textarea)", value: "(pasted)" });
       } else {
         skipped.push("cover_letter");
       }

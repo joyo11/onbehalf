@@ -146,8 +146,14 @@ export async function GET(req: Request) {
         : null,
       coverLetter:
         coverLetterBase64 && coverLetterFileName
-          ? { bytes: coverLetterBase64, filename: coverLetterFileName }
-          : null,
+          ? {
+              bytes: coverLetterBase64,
+              filename: coverLetterFileName,
+              text: row.appCoverLetter ?? null,
+            }
+          : row.appCoverLetter
+            ? { bytes: null, filename: null, text: row.appCoverLetter }
+            : null,
       // Surfaced for the extension's review UI — the resolved fields
       // the server already decided on (from a prior server-side run).
       resolvedFields:
