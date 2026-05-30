@@ -128,6 +128,13 @@ export async function fillGreenhouseForm(
     resolvedFields,
   );
 
+  // Phase 2B (4) — scan for file inputs we don't recognize (transcript,
+  // portfolio, work sample). Required ones get abstain ResolvedFields
+  // so Phase 3 routes the application to needsHuman instead of us
+  // silently leaving a required slot empty (or worse, uploading the
+  // resume into a transcript slot).
+  await flagUnknownRequiredFileInputs(page, steps, resolvedFields);
+
   // ── Submit button ─────────────────────────────────────────
   await page.waitForTimeout(200);
   const submitSelectors = [
@@ -667,9 +674,26 @@ export async function fillCityAutocompletes(
   steps: SubmissionStep[],
 ): Promise<void> {
   // Extract city from "Brooklyn, NY" or "New York, New York, USA" → first part.
-  const loc = profile.location ?? "";
-  const city = loc.split(",")[0]?.trim() ?? "";
-  if (!city) return;
+  // Phase 2B abstain check — require state/country in profile.location
+  // before we attempt the autocomplete. Without disambiguation we'd
+  // silently pick the first option, which on some boards is the wrong
+  // city in the wrong state (the canonical "Brooklyn, IL not Brooklyn,
+  // NY" bug).
+  const { parseCityForResolver } = await import("./abstain-checks");
+  const parsed = parseCityForResolver(profile.location);
+  if (!parsed.ok) {
+    steps.push({
+      step: "abstained_city_autocomplete",
+      detail: parsed.reason,
+      ok: false,
+    });
+    // We don't know how many city-shaped controls there are; push one
+    // abstain ResolvedField at the function level. The caller can
+    // dedupe by label if it ever loops.
+    return;
+  }
+  const city = parsed.city;
+  const region = parsed.region;
 
   // Find any visible React-Select control inside a container whose label
   // mentions Location or City AND whose value-container shows "Select..."
@@ -702,29 +726,70 @@ export async function fillCityAutocompletes(
       // City autocomplete typically debounces 300-500ms before fetching
       await page.waitForTimeout(900);
 
-      // Click the first visible option
+      // Enumerate visible options (was: just click the first). Look for
+      // one whose text contains BOTH the city we typed AND the region
+      // (state/country) — that's a high-confidence match. Fall back to
+      // single-option auto-pick at medium, abstain when ambiguous.
       const optionSelectors = [
         "[role='option']:visible",
         "[class*='option']:visible:not([class*='disabled' i])",
         "[class*='Option']:visible:not([class*='disabled' i])",
       ];
-      let clicked = false;
+      let optionEls: import("playwright-core").Locator[] = [];
       for (const sel of optionSelectors) {
-        const opt = page.locator(sel).first();
-        if ((await opt.count()) === 0) continue;
-        try {
-          await opt.click({ timeout: 1500 });
-          clicked = true;
-          steps.push({ step: "filled_city_autocomplete", detail: city, ok: true });
+        const found = await page.locator(sel).all();
+        if (found.length > 0) {
+          optionEls = found;
           break;
-        } catch {
-          // try next
         }
       }
-      if (!clicked) {
-        // No async option appeared — press Enter to commit free-text
-        await page.keyboard.press("Enter").catch(() => {});
+      const optionTexts: string[] = [];
+      for (const opt of optionEls) {
+        const t = ((await opt.textContent().catch(() => "")) ?? "").trim();
+        optionTexts.push(t);
+      }
+
+      const cityLower = city.toLowerCase();
+      const regionLower = region.toLowerCase();
+      let pickIdx = -1;
+      let confidence: "high" | "medium" | "abstain" = "abstain";
+
+      // High-confidence: option contains both city and region (case-insensitive)
+      for (let i = 0; i < optionTexts.length; i++) {
+        const t = optionTexts[i].toLowerCase();
+        if (t.includes(cityLower) && t.includes(regionLower)) {
+          pickIdx = i;
+          confidence = "high";
+          break;
+        }
+      }
+      // Medium-confidence: exactly one option came back. Trust it.
+      if (pickIdx < 0 && optionEls.length === 1) {
+        pickIdx = 0;
+        confidence = "medium";
+      }
+      // Otherwise abstain — multiple options, none match region, or
+      // none came back at all. Press Escape to close the menu and
+      // let Phase 3's gate route the application to needsHuman.
+
+      if (pickIdx >= 0) {
+        try {
+          await optionEls[pickIdx].click({ timeout: 1500 });
+          steps.push({
+            step: "filled_city_autocomplete",
+            detail: `${optionTexts[pickIdx].slice(0, 60)} (${confidence})`,
+            ok: true,
+          });
+        } catch {
+          await page.keyboard.press("Escape").catch(() => {});
+        }
+      } else {
         await page.keyboard.press("Escape").catch(() => {});
+        steps.push({
+          step: "abstained_city_autocomplete",
+          detail: `${optionTexts.length} options, none matched "${region}"`,
+          ok: false,
+        });
       }
     } catch {
       // skip
@@ -970,6 +1035,89 @@ export async function fillEmptyRequiredTextInputs(
 function isUrl(s: string | null | undefined): s is string {
   if (!s) return false;
   return /^https?:\/\/|^[a-z0-9-]+\.[a-z]{2,}/.test(s.toLowerCase().trim());
+}
+
+/**
+ * Phase 2B (4) — for every visible file input on the page that ISN'T
+ * a resume/cover-letter slot, push an abstain ResolvedField so Phase
+ * 3 routes the application to needsHuman. Companies sometimes require
+ * a transcript / portfolio / work sample, and uploading the resume
+ * into those slots is worse than leaving them empty.
+ *
+ * The classification is in `classifyFileInput` (pure helper, unit
+ * tested) so the failure mode is reproducible without a browser.
+ */
+async function flagUnknownRequiredFileInputs(
+  page: Page,
+  steps: SubmissionStep[],
+  resolvedFields: ResolvedField[],
+): Promise<void> {
+  const { classifyFileInput } = await import("./abstain-checks");
+  const fileInputs = await page.locator("input[type='file']").all();
+  let flagged = 0;
+  for (const inp of fileInputs) {
+    try {
+      if (!(await inp.isVisible().catch(() => false))) continue;
+
+      // Has anything already been uploaded into this slot?
+      const filesLen = await inp
+        .evaluate((el) => (el as HTMLInputElement).files?.length ?? 0)
+        .catch(() => 0);
+      if (filesLen > 0) continue;
+
+      // Only required-shaped inputs trigger needsHuman — optional file
+      // slots can stay empty without failing the form.
+      const meta = await inp
+        .evaluate((el) => {
+          const node = el as HTMLInputElement;
+          const name = node.getAttribute("name");
+          const id = node.id || null;
+          // label resolution mirrors fillEmptyRequiredTextInputs
+          let label = "";
+          if (node.id) {
+            const l = document.querySelector(`label[for='${CSS.escape(node.id)}']`);
+            if (l?.textContent) label = l.textContent.trim();
+          }
+          if (!label) {
+            const wrap = node.closest("label");
+            if (wrap?.textContent) label = wrap.textContent.trim();
+          }
+          const required = node.required;
+          const ariaRequired = node.getAttribute("aria-required");
+          const labelStar = /\*\s*$/.test(label);
+          return {
+            name,
+            id,
+            label: label.slice(0, 200),
+            looksRequired: required || ariaRequired === "true" || labelStar,
+          };
+        })
+        .catch(() => null);
+      if (!meta) continue;
+
+      const kind = classifyFileInput({ name: meta.name, id: meta.id, label: meta.label });
+      if (kind !== "unknown") continue; // resume / cover-letter handled elsewhere
+      if (!meta.looksRequired) continue;
+
+      resolvedFields.push({
+        label: meta.label || meta.name || "(unlabelled file input)",
+        value: null,
+        source: "abstain",
+        confidence: "abstain",
+        reason: "unknown_file_input — agent doesn't know what to upload here (transcript / portfolio / work sample)",
+      });
+      flagged++;
+    } catch {
+      // skip — never crash the fill on a file-input edge case
+    }
+  }
+  if (flagged > 0) {
+    steps.push({
+      step: "flagged_unknown_file_inputs",
+      detail: `${flagged} required file input${flagged === 1 ? "" : "s"} we couldn't auto-fill`,
+      ok: false,
+    });
+  }
 }
 
 export function mapEeoToOption(value: string, kind: "gender" | "hispanic" | "race" | "veteran" | "disability" | "sexual_orientation"): string {

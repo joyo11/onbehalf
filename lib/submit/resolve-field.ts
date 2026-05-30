@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { isOtherStylePick } from "./abstain-checks";
 import type { ResolvedField, SubmissionProfile } from "./types";
 
 /**
@@ -195,6 +196,20 @@ export async function resolveSelectField(
         confidence: "abstain",
         source: "abstain",
         reason: `LLM picked "${cleaned.slice(0, 40)}" which isn't in the option list — treated as abstain`,
+      };
+    }
+
+    // Phase 2B abstain check — refuse "Other"-style picks. These almost
+    // always come with a follow-up free-text field we can't reliably
+    // commit to from the same LLM call, so picking "Other" without the
+    // text is just a wrong answer in disguise. Abstain instead; Phase 3
+    // gates to needsHuman.
+    if (isOtherStylePick(match)) {
+      return {
+        value: null,
+        confidence: "abstain",
+        source: "abstain",
+        reason: `LLM picked "${match}" — Other-style picks need a follow-up text input we can't commit to from one call`,
       };
     }
 

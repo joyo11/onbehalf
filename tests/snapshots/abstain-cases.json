@@ -1,0 +1,264 @@
+[
+  {
+    "name": "city/brooklyn-no-state",
+    "input": {
+      "location": "Brooklyn"
+    },
+    "output": {
+      "ok": false,
+      "reason": "no_state_or_country_on_profile"
+    }
+  },
+  {
+    "name": "city/brooklyn-with-state",
+    "input": {
+      "location": "Brooklyn, NY"
+    },
+    "output": {
+      "ok": true,
+      "city": "Brooklyn",
+      "region": "NY"
+    }
+  },
+  {
+    "name": "city/city-comma-country",
+    "input": {
+      "location": "London, UK"
+    },
+    "output": {
+      "ok": true,
+      "city": "London",
+      "region": "UK"
+    }
+  },
+  {
+    "name": "city/empty-string",
+    "input": {
+      "location": ""
+    },
+    "output": {
+      "ok": false,
+      "reason": "no_location_on_profile"
+    }
+  },
+  {
+    "name": "city/new-york-full",
+    "input": {
+      "location": "New York, New York, USA"
+    },
+    "output": {
+      "ok": true,
+      "city": "New York",
+      "region": "New York, USA"
+    }
+  },
+  {
+    "name": "city/null-location",
+    "input": {
+      "location": null
+    },
+    "output": {
+      "ok": false,
+      "reason": "no_location_on_profile"
+    }
+  },
+  {
+    "name": "city/trailing-comma",
+    "input": {
+      "location": "Brooklyn,"
+    },
+    "output": {
+      "ok": false,
+      "reason": "no_state_or_country_on_profile"
+    }
+  },
+  {
+    "name": "file/cover-letter-by-label",
+    "input": {
+      "name": "file_2",
+      "id": null,
+      "label": "Cover Letter"
+    },
+    "output": {
+      "kind": "cover_letter"
+    }
+  },
+  {
+    "name": "file/cover-letter-by-name",
+    "input": {
+      "name": "cover_letter",
+      "id": null,
+      "label": null
+    },
+    "output": {
+      "kind": "unknown"
+    }
+  },
+  {
+    "name": "file/cv-keyword",
+    "input": {
+      "name": null,
+      "id": null,
+      "label": "Upload your CV"
+    },
+    "output": {
+      "kind": "resume"
+    }
+  },
+  {
+    "name": "file/portfolio",
+    "input": {
+      "name": null,
+      "id": null,
+      "label": "Portfolio (PDF)"
+    },
+    "output": {
+      "kind": "unknown"
+    }
+  },
+  {
+    "name": "file/resume-by-label",
+    "input": {
+      "name": null,
+      "id": null,
+      "label": "Resume / CV"
+    },
+    "output": {
+      "kind": "resume"
+    }
+  },
+  {
+    "name": "file/resume-by-name",
+    "input": {
+      "name": "resume",
+      "id": null,
+      "label": null
+    },
+    "output": {
+      "kind": "resume"
+    }
+  },
+  {
+    "name": "file/transcript",
+    "input": {
+      "name": "transcript",
+      "id": null,
+      "label": "Academic Transcript"
+    },
+    "output": {
+      "kind": "unknown"
+    }
+  },
+  {
+    "name": "file/unlabelled",
+    "input": {
+      "name": null,
+      "id": null,
+      "label": null
+    },
+    "output": {
+      "kind": "unknown"
+    }
+  },
+  {
+    "name": "file/work-sample",
+    "input": {
+      "name": "work_sample",
+      "id": null,
+      "label": "Work sample"
+    },
+    "output": {
+      "kind": "unknown"
+    }
+  },
+  {
+    "name": "other/asian",
+    "input": {
+      "value": "Asian"
+    },
+    "output": {
+      "isOther": false
+    }
+  },
+  {
+    "name": "other/decline-real-eeo",
+    "input": {
+      "value": "Decline to self-identify"
+    },
+    "output": {
+      "isOther": false
+    }
+  },
+  {
+    "name": "other/none-of-the-above",
+    "input": {
+      "value": "None of the above"
+    },
+    "output": {
+      "isOther": true
+    }
+  },
+  {
+    "name": "other/other-with-paren",
+    "input": {
+      "value": "Other (please specify)"
+    },
+    "output": {
+      "isOther": true
+    }
+  },
+  {
+    "name": "other/plain-other",
+    "input": {
+      "value": "Other"
+    },
+    "output": {
+      "isOther": true
+    }
+  },
+  {
+    "name": "other/prefer-not-to-say",
+    "input": {
+      "value": "Prefer not to say"
+    },
+    "output": {
+      "isOther": true
+    }
+  },
+  {
+    "name": "other/rather-not-specify",
+    "input": {
+      "value": "I'd rather not specify"
+    },
+    "output": {
+      "isOther": true
+    }
+  },
+  {
+    "name": "other/software-engineer",
+    "input": {
+      "value": "Software Engineer"
+    },
+    "output": {
+      "isOther": false
+    }
+  },
+  {
+    "name": "other/something-else",
+    "input": {
+      "value": "Something else"
+    },
+    "output": {
+      "isOther": true
+    }
+  },
+  {
+    "name": "other/yes",
+    "input": {
+      "value": "Yes"
+    },
+    "output": {
+      "isOther": false
+    }
+  }
+]
