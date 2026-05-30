@@ -52,6 +52,12 @@ export async function fillGreenhouseForm(
   await page.waitForTimeout(400);
   await fillAllLabelledFields(page, profile, steps);
 
+  // Auto-check any "I agree / I acknowledge / I consent" submission checkboxes
+  // that sit near the submit button. These are always boilerplate legal
+  // acknowledgments — leaving them unchecked is the #1 reason a form
+  // validates to fail at the very last step.
+  await checkAcknowledgmentBoxes(page, steps);
+
   // ── Submit button ─────────────────────────────────────────
   await page.waitForTimeout(200);
   const submitSelectors = [
@@ -369,23 +375,63 @@ const profileMap: Array<{
     match: /preferred name|name you.*prefer|what name.*us(?:e| to use)/i,
     get: (p) => p.preferredName ?? p.firstName,
   },
-  // LinkedIn / GitHub / portfolio (some forms have these as labelled fields)
+  // LinkedIn / GitHub / portfolio (some forms have these as labelled fields).
+  // Skip if the profile value isn't actually a URL — a literal "GitHub" string
+  // in the profile would otherwise get filled as the field value.
   {
     match: /linkedin/i,
-    get: (p) => p.linkedinUrl,
+    get: (p) => (isUrl(p.linkedinUrl) ? p.linkedinUrl : null),
   },
   {
     match: /github/i,
-    get: (p) => p.githubUrl,
+    get: (p) => (isUrl(p.githubUrl) ? p.githubUrl : null),
   },
   {
     match: /website|portfolio|personal site/i,
-    get: (p) => p.portfolioUrl ?? p.githubUrl,
+    get: (p) =>
+      isUrl(p.portfolioUrl) ? p.portfolioUrl : isUrl(p.githubUrl) ? p.githubUrl : null,
   },
-  // Visa / sponsorship
+  // Work authorization — long-form options (Vercel/Stripe style)
+  // Each form lists 3-5 long descriptions. Map profile to the matching
+  // semantic option BEFORE the generic Yes/No sponsorship handler runs.
   {
-    match: /sponsor|visa|work authorization|authori[sz]ed to work/i,
+    match: /authori[sz]ation to work|describe your work authori|status with respect to (?:your )?work/i,
+    get: (p) => {
+      // Pick the keyword phrase that's likely contained in the right option.
+      // The React-Select matcher will fuzzy-match this against the actual
+      // option text. Polarity guard still runs after.
+      if (p.workAuthorization === "us_citizen_pr") {
+        return "nationality"; // matches "I am authorized…due to my nationality"
+      }
+      if (p.workAuthorization === "needs_sponsorship" || p.needsSponsorship) {
+        return "needs to be sponsored"; // matches "…work permit which needs to be sponsored"
+      }
+      // Has work permit, doesn't need future sponsorship (US OPT no-longer-needs-H1B, EAD, etc.)
+      return "do not need a company to sponsor"; // matches "…and do not need a company to sponsor my visa"
+    },
+  },
+  // Visa / sponsorship — short Yes/No
+  {
+    match: /sponsor|visa|require visa/i,
     get: (p) => (p.needsSponsorship ? "Yes" : "No"),
+  },
+  // State / region (Vercel asks "Do you live in one of the following states?")
+  {
+    match: /live in one of the following states|which state|state of residence/i,
+    get: (p) => {
+      // Extract state from "New York, New York, USA" → "New York"
+      // or "Brooklyn, NY" → "NY"
+      const loc = p.location ?? "";
+      const parts = loc.split(",").map((s) => s.trim()).filter(Boolean);
+      // If first part is a city and second is a state-like string, return second
+      if (parts.length >= 2) return parts[1];
+      return parts[0] ?? "";
+    },
+  },
+  // Country from restricted list ("Are you currently based in any of these countries?")
+  {
+    match: /currently based in|based in any of these countries|in which of (?:these|the following) countries/i,
+    get: (p) => p.countryOfResidence ?? "United States",
   },
   // Employment agreements / non-compete
   {
@@ -451,6 +497,55 @@ function answerForQuestion(question: string, profile: SubmissionProfile): string
   }
 
   return null;
+}
+
+/**
+ * Greenhouse forms commonly include 1-3 "By submitting I acknowledge…"
+ * checkboxes near the submit button. They're standard legal boilerplate
+ * (privacy notice, accuracy attestation). Leaving them blank fails
+ * validation. Find every visible checkbox and check it — opt-out for
+ * marketing-style checkboxes that contain "marketing" / "newsletter" /
+ * "promotional" in the label text.
+ */
+async function checkAcknowledgmentBoxes(page: Page, steps: SubmissionStep[]): Promise<void> {
+  const checkboxes = await page.locator("input[type='checkbox']").all();
+  for (const cb of checkboxes) {
+    try {
+      if (!(await cb.isVisible().catch(() => false))) continue;
+      if (await cb.isChecked().catch(() => false)) continue;
+
+      const id = await cb.getAttribute("id").catch(() => null);
+      let labelText = "";
+      if (id) {
+        labelText =
+          ((await page.locator(`label[for='${cssEscape(id)}']`).first().textContent().catch(() => "")) ?? "")
+            .trim();
+      }
+      if (!labelText) {
+        labelText = ((await cb.locator("xpath=..").textContent().catch(() => "")) ?? "").trim();
+      }
+
+      // Skip marketing / newsletter opt-ins
+      if (/marketing|newsletter|promotional|subscribe|updates from|future opportunit/i.test(labelText)) {
+        steps.push({ step: "skipped_marketing_checkbox", detail: labelText.slice(0, 60), ok: true });
+        continue;
+      }
+
+      await cb.check({ timeout: 2000 });
+      steps.push({ step: "checked_acknowledgment", detail: labelText.slice(0, 60), ok: true });
+    } catch (e) {
+      steps.push({
+        step: "failed_checkbox",
+        detail: e instanceof Error ? e.message : "check failed",
+        ok: false,
+      });
+    }
+  }
+}
+
+function isUrl(s: string | null | undefined): s is string {
+  if (!s) return false;
+  return /^https?:\/\/|^[a-z0-9-]+\.[a-z]{2,}/.test(s.toLowerCase().trim());
 }
 
 function mapEeoToOption(value: string, kind: "gender" | "hispanic" | "race" | "veteran" | "disability"): string {
