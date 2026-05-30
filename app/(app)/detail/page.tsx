@@ -309,6 +309,7 @@ function DetailInner() {
 
           {data.application.status === "needsHuman" && (
             <NeedsHumanCard
+              applicationId={data.application.id}
               reason={data.application.customAnswersJson?.needsHumanReason ?? data.application.failureReason ?? "unknown"}
               resolvedFields={data.application.customAnswersJson?.resolvedFields ?? []}
               onApprove={onApproveSubmit}
@@ -316,6 +317,9 @@ function DetailInner() {
               approveError={approveError}
               applyUrl={data.job.applyUrl}
               botBlockSignal={data.application.customAnswersJson?.botBlockSignal}
+              hasPreSubmitScreenshot={data.events.some(
+                (e) => e.step === "screenshot_pre_submit",
+              )}
             />
           )}
 
@@ -452,6 +456,7 @@ function DetailSkeleton() {
 }
 
 function NeedsHumanCard({
+  applicationId,
   reason,
   resolvedFields,
   onApprove,
@@ -459,7 +464,9 @@ function NeedsHumanCard({
   approveError,
   applyUrl,
   botBlockSignal,
+  hasPreSubmitScreenshot,
 }: {
+  applicationId: string;
   reason: string;
   resolvedFields: ResolvedField[];
   onApprove: () => void;
@@ -467,9 +474,14 @@ function NeedsHumanCard({
   approveError: string | null;
   applyUrl: string;
   botBlockSignal?: string;
+  hasPreSubmitScreenshot: boolean;
 }) {
   const lowFields = resolvedFields.filter((f) => f.confidence !== "high");
+  const highFields = resolvedFields.filter((f) => f.confidence === "high");
   const isBotBlocked = reason.startsWith("bot_blocked");
+  const screenshotUrl = hasPreSubmitScreenshot
+    ? `/api/applications/${applicationId}/screenshot?phase=pre`
+    : null;
   return (
     <div className="bg-amber-50 border border-amber-200 rounded-xl3 p-6">
       <Eyebrow tone="teal" className="mb-2">
@@ -521,6 +533,35 @@ function NeedsHumanCard({
         </div>
       )}
 
+      {screenshotUrl && (
+        <div className="mt-4 bg-white border border-amber-200 rounded-xl2 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[12.5px] font-semibold text-ink-soft">
+              Here&apos;s what I filled in (screenshot from the server-side
+              browser)
+            </p>
+            <span className="text-[11px] text-ink-faint">
+              {highFields.length} field{highFields.length === 1 ? "" : "s"} verified · {lowFields.length} need review
+            </span>
+          </div>
+          <a
+            href={screenshotUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="block rounded-ctrl overflow-hidden border border-sand-200 hover:border-ink/30 transition-colors"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={screenshotUrl}
+              alt="Filled form (pre-submit screenshot)"
+              className="w-full h-auto block"
+              style={{ maxHeight: "320px", objectFit: "cover", objectPosition: "top" }}
+            />
+          </a>
+          <p className="mt-1.5 text-[11px] text-ink-faint">Click to open full size.</p>
+        </div>
+      )}
+
       <div className="mt-5 flex flex-wrap items-center gap-3">
         {!isBotBlocked && (
           <button
@@ -537,9 +578,15 @@ function NeedsHumanCard({
           rel="noreferrer"
           className="inline-flex items-center gap-2 rounded-full bg-white hover:bg-sand-50 border border-sand-200 text-ink text-[14px] font-semibold px-5 py-2.5 transition-colors"
         >
-          Open form yourself <Ic.ext className="h-3.5 w-3.5" />
+          Apply directly instead <Ic.ext className="h-3.5 w-3.5" />
         </a>
       </div>
+
+      <p className="mt-3 text-[11.5px] text-ink-faint leading-relaxed">
+        {isBotBlocked
+          ? "This company's form actively blocks automation, so I can't finish it for you. Use the link above to submit by hand."
+          : "Approve & Submit re-opens the form in a fresh browser session and finishes the submit click for you. Apply directly opens the company's form on its own — the fields I filled live in a server-side browser session that's already closed, so you'd be starting from a blank form."}
+      </p>
 
       {approveError && (
         <p className="mt-3 text-[12.5px] text-red-600">{approveError}</p>
