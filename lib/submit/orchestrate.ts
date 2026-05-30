@@ -337,6 +337,13 @@ export async function runSubmission(
       // routing/matching — see memory project-onbehalf-bot-block-one-way.
       await session.page.waitForTimeout(2000);
       const block = await detectVisibleChallenge(session.page);
+      // Always emit a receipt so we can tell "probe ran, saw nothing"
+      // apart from "function timed out before probe finished."
+      await logEvent(applicationId, "bot_block_probe_done", {
+        blocked: block.blocked,
+        signal: block.signal,
+        detail: block.detail,
+      });
       if (block.blocked) {
         const blockShot = await session.page.screenshot({
           fullPage: true,

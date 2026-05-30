@@ -44,12 +44,13 @@ export async function fillAshbyForm(
 
   // Ashby is a React SPA — domcontentloaded fires before the form mounts.
   // Wait for ANY of the markers that signal the application form is on
-  // the page. Up to 25s; long enough for slow JS-bundle loads, short
-  // enough that a truly broken page doesn't blow the 60s function budget.
+  // the page. 12s — long enough for a normally-rendering Ashby SPA,
+  // short enough that a non-rendering page doesn't blow the 60s function
+  // budget (Phase 1 of the 2026-05-30 plan tightened this from 25s).
   const markerSelector =
     "input[type='file'], input[name*='_systemfield' i], input[name='name'], input[name='email'], form[class*='application' i], [class*='ashby-application'], [data-ashby-application-form], [class*='application-form']";
   const ready = await page
-    .waitForSelector(markerSelector, { timeout: 25_000, state: "attached" })
+    .waitForSelector(markerSelector, { timeout: 12_000, state: "attached" })
     .then(() => true)
     .catch(() => false);
   steps.push({ step: "ashby_form_ready", detail: String(ready), ok: ready });
