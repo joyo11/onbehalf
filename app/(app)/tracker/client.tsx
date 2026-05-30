@@ -107,9 +107,30 @@ export default function TrackerClient({
             kind: "info",
           })
         }
-        onArchive={() =>
-          setToast({ open: true, message: `Archived ${selected.size}`, kind: "info" })
-        }
+        onDelete={async () => {
+          const n = selected.size;
+          if (n === 0) return;
+          const ok = window.confirm(
+            `Remove ${n} application${n === 1 ? "" : "s"}? This can't be undone (the scraped job stays in matches).`,
+          );
+          if (!ok) return;
+          const ids = Array.from(selected);
+          // Best-effort: fire all deletes in parallel; if any fail we'll
+          // just show what succeeded after the reload.
+          await Promise.all(
+            ids.map((id) =>
+              fetch(`/api/applications/${encodeURIComponent(id)}`, {
+                method: "DELETE",
+              }).catch(() => null),
+            ),
+          );
+          setToast({
+            open: true,
+            message: `Removed ${n} application${n === 1 ? "" : "s"}`,
+            kind: "info",
+          });
+          window.location.reload();
+        }}
       />
 
       <DocDrawer
@@ -445,7 +466,6 @@ function TrackerTable({
             <col style={{ width: 252 }} />
             <col style={{ width: 134 }} />
             <col style={{ width: 100 }} />
-            <col style={{ width: 44 }} />
           </colgroup>
           <thead>
             <tr className="bg-[#F7F6F1] text-[12px] text-ink-soft border-b border-line">
@@ -469,7 +489,6 @@ function TrackerTable({
               <th className="px-2 py-2.5 font-medium">Tailoring Changes</th>
               <th className="px-2 py-2.5 font-medium">Status</th>
               <th className="px-2 py-2.5 font-medium">Confirmation</th>
-              <th className="px-2 py-2.5 font-medium text-center"></th>
             </tr>
           </thead>
           <tbody>
@@ -553,9 +572,6 @@ function TrackerTable({
                       <span className="text-ink-faint">—</span>
                     )}
                   </td>
-                  <td className="px-2 py-2.5 text-center">
-                    <DeleteRowButton id={r.id} company={r.company.name} />
-                  </td>
                 </tr>
               );
             })}
@@ -598,12 +614,12 @@ function BulkBar({
   count,
   onClear,
   onExport,
-  onArchive,
+  onDelete,
 }: {
   count: number;
   onClear: () => void;
   onExport: () => void;
-  onArchive: () => void;
+  onDelete: () => void;
 }) {
   if (!count) return null;
   return (
@@ -619,14 +635,11 @@ function BulkBar({
         >
           <Icon name="download" size={14} /> Export
         </button>
-        <button className="h-8 px-2.5 rounded-ctrl hover:bg-white/10 flex items-center gap-1.5 focus-ring">
-          <Icon name="tag" size={14} /> Tag
-        </button>
         <button
-          onClick={onArchive}
-          className="h-8 px-2.5 rounded-ctrl hover:bg-white/10 flex items-center gap-1.5 focus-ring"
+          onClick={onDelete}
+          className="h-8 px-2.5 rounded-ctrl hover:bg-red-500/20 flex items-center gap-1.5 focus-ring text-red-200"
         >
-          <Icon name="archive" size={14} /> Archive
+          <Icon name="trash" size={14} /> Delete
         </button>
         <span className="w-px h-5 bg-white/15" />
         <button
@@ -892,40 +905,3 @@ function DiffPreview({ row }: { row: TrackerRow }) {
   );
 }
 
-function DeleteRowButton({ id, company }: { id: string; company: string }) {
-  const [busy, setBusy] = useState(false);
-  async function onDelete() {
-    if (busy) return;
-    const ok = window.confirm(
-      `Remove this ${company} application? This can't be undone (the scraped job stays in matches).`,
-    );
-    if (!ok) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/applications/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        window.location.reload();
-      } else {
-        const body = await res.json().catch(() => ({}));
-        alert(body?.error ?? `Delete failed (${res.status})`);
-        setBusy(false);
-      }
-    } catch {
-      alert("Network error.");
-      setBusy(false);
-    }
-  }
-  return (
-    <button
-      onClick={onDelete}
-      disabled={busy}
-      title="Delete this application"
-      className="h-7 w-7 rounded-ctrl hover:bg-[#F1F0EB] flex items-center justify-center focus-ring text-ink-faint hover:text-red-600 disabled:opacity-40"
-      aria-label="Delete application"
-    >
-      <Icon name="trash" size={14} />
-    </button>
-  );
-}
