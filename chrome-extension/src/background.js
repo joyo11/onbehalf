@@ -91,6 +91,43 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  // Phase 7 — capture screenshot of current tab + ask server for a
+  // vision-based fill plan. payload = { applicationId, dryRun? }
+  if (msg.type === "COMPUTER_USE_PLAN") {
+    (async () => {
+      try {
+        let screenshotBase64 = null;
+        if (!msg.payload?.dryRun) {
+          // captureVisibleTab returns "data:image/jpeg;base64,XXXX"
+          const dataUrl = await chrome.tabs.captureVisibleTab(undefined, {
+            format: "jpeg",
+            quality: 70,
+          });
+          screenshotBase64 = dataUrl.replace(/^data:image\/[^;]+;base64,/, "");
+        }
+        const path = msg.payload?.dryRun
+          ? "/api/extension/computer-use?dryRun=1"
+          : "/api/extension/computer-use";
+        const resp = await api(path, {
+          method: "POST",
+          body: JSON.stringify({
+            applicationId: msg.payload.applicationId,
+            screenshotBase64,
+            dryRun: !!msg.payload.dryRun,
+          }),
+        });
+        sendResponse(resp);
+      } catch (e) {
+        sendResponse({
+          ok: false,
+          status: 0,
+          body: { error: "background screenshot threw", message: e?.message },
+        });
+      }
+    })();
+    return true; // async
+  }
+
   // From content script: report fill result + screenshot back to the
   // server for the gate decision. Phase 4 wiring.
   if (msg.type === "REPORT_FILL_RESULT") {

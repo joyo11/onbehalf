@@ -28,6 +28,7 @@
       "js": [
         "src/fill/dom-surface.js",
         "src/fill/greenhouse.js",
+        "src/fill/computer-use.js",
         "src/content.js"
       ],
       "run_at": "document_idle"

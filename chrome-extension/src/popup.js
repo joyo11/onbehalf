@@ -81,6 +81,55 @@ async function init() {
   $("ready-job-company").textContent = cachedJob.application.company;
   show("state-ready-to-fill");
   $("run-fill").onclick = runFill;
+  $("run-vision-dryrun").onclick = () => runVisionFill({ dryRun: true });
+  $("run-vision-real").onclick = () => runVisionFill({ dryRun: false });
+}
+
+async function runVisionFill({ dryRun }) {
+  if (!cachedJob || cachedTabId == null) return;
+  show("state-loading");
+
+  const planResp = await send({
+    type: "COMPUTER_USE_PLAN",
+    payload: { applicationId: cachedJob.application.id, dryRun },
+  });
+  if (!planResp?.ok || !planResp.body?.plan) {
+    setError(planResp?.body?.error ?? "Vision plan failed.");
+    return;
+  }
+  const plan = planResp.body.plan;
+  const cost = planResp.body.tokenCost ?? 0;
+
+  const tab = { id: cachedTabId };
+  const execResp = await tellTab(tab, { type: "EXECUTE_PLAN", plan });
+  if (!execResp?.ok || !execResp.result) {
+    setError(execResp?.error ?? "Plan executor failed.");
+    return;
+  }
+  const r = execResp.result;
+
+  $("filled-list").innerHTML = "";
+  const head = document.createElement("li");
+  head.textContent = dryRun
+    ? `[DRY-RUN] Plan had ${r.summary.total}, executed ${r.summary.filled}.`
+    : `Vision plan: ${r.summary.filled}/${r.summary.total} filled · ${r.summary.abstained} abstained · cost ~$${cost.toFixed(3)}`;
+  head.style.fontWeight = "700";
+  head.style.borderBottom = "0";
+  $("filled-list").appendChild(head);
+  for (const item of r.results.slice(0, 14)) {
+    const li = document.createElement("li");
+    li.textContent = `[${item.status}] ${item.targetLabel}: ${String(item.value ?? "—").slice(0, 50)}`;
+    li.style.fontWeight = "400";
+    li.style.fontSize = "12px";
+    $("filled-list").appendChild(li);
+  }
+  $("skipped-line").textContent =
+    r.summary.notFound > 0
+      ? `${r.summary.notFound} fields the plan named couldn't be found on the page.`
+      : "";
+  show("state-filled");
+  $("approve-submit").onclick = () => clickSubmit(tab, true);
+  $("cancel-fill").onclick = () => window.close();
 }
 
 async function runFill() {

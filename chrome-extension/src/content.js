@@ -53,6 +53,20 @@ if (!window[ONBEHALF_MARKER]) {
       );
       return true; // async
     }
+
+    // Phase 7 — execute a vision-planned fill. msg.plan is PlanAction[].
+    if (msg?.type === "EXECUTE_PLAN") {
+      const exec = window.__onbehalfExecutePlan;
+      if (!exec) {
+        sendResponse({ ok: false, error: "executor not loaded" });
+        return false;
+      }
+      exec(msg.plan).then(
+        (result) => sendResponse({ ok: true, result }),
+        (err) => sendResponse({ ok: false, error: err?.message ?? "execute threw" }),
+      );
+      return true;
+    }
     return false;
   });
 }
