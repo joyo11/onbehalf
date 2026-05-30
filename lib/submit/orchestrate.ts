@@ -444,34 +444,40 @@ export async function runSubmission(
       // be true before we click Submit:
       //   1. realSubmitEnabled (env flag — false = demo mode)
       //   2. A submit button was located on the page
-      //   3. EITHER all resolved fields are high-confidence (deterministic
-      //      from profile, exact-match, etc.) — OR the human already
-      //      approved via /api/approve-submit (forceSubmit). The strict
-      //      "high-only" default is from feedback-relax-with-evidence;
-      //      Phase 2's snapshot tests will let us loosen to high+medium.
-      //   Anything else routes to needsHuman with a structured reason
-      //   that Phase D's UI will render and the user can act on.
-      const lowOrAbstainCount = resolvedFields.filter(
-        (f) => f.confidence !== "high",
-      ).length;
-      const allHighConfidence = lowOrAbstainCount === 0;
+      //   3. EITHER no resolved field came back `low` or `abstain` — OR
+      //      the human already approved via /api/approve-submit
+      //      (forceSubmit). High and medium both pass.
+      //
+      // History: this used to require ALL fields be `high`. Once Phase
+      // 2B's abstain checks + 6-fixture snapshot net + 26-case abstain
+      // snapshot landed and proved medium picks were calibrated (the
+      // resolver abstains rather than guesses when it's unsure), we
+      // loosened to high+medium per feedback-relax-with-evidence.
+      // Anything else routes to needsHuman with a structured reason.
+      const abstainCount = resolvedFields.filter((f) => f.confidence === "abstain").length;
+      const lowCount = resolvedFields.filter((f) => f.confidence === "low").length;
+      const blockingCount = abstainCount + lowCount;
+      const allAcceptable = blockingCount === 0;
       const submitGateOpen =
-        realSubmitEnabled && !!result.submitButton && (forceSubmit || allHighConfidence);
+        realSubmitEnabled && !!result.submitButton && (forceSubmit || allAcceptable);
       const needsHumanReason: string | null = !realSubmitEnabled
         ? "submit_disabled"
         : !result.submitButton
           ? "no_submit_button"
-          : resolvedFields.some((f) => f.confidence === "abstain")
+          : abstainCount > 0
             ? "abstained_required"
-            : !allHighConfidence
+            : lowCount > 0
               ? "low_confidence"
               : null;
 
       await logEvent(applicationId, "submit_gate_decision", {
         submit: submitGateOpen,
         reason: needsHumanReason,
-        allHighConfidence,
-        lowOrAbstainCount,
+        allAcceptable,
+        abstainCount,
+        lowCount,
+        mediumCount: resolvedFields.filter((f) => f.confidence === "medium").length,
+        highCount: resolvedFields.filter((f) => f.confidence === "high").length,
         totalResolved: resolvedFields.length,
         forceSubmit,
         realSubmitEnabled,
@@ -548,9 +554,12 @@ export async function runSubmission(
         // Gate closed — record WHY so the review UI can render it.
         await logEvent(applicationId, "stopped_at_submit", {
           reason: needsHumanReason ?? "unknown",
-          allHighConfidence,
-          lowConfidenceFields: resolvedFields
-            .filter((f) => f.confidence !== "high")
+          allAcceptable,
+          // Surface the actual blocking fields — low / abstain only.
+          // The review UI cares about these specifically (medium picks
+          // are considered safe enough to auto-submit now).
+          blockingFields: resolvedFields
+            .filter((f) => f.confidence === "low" || f.confidence === "abstain")
             .map((f) => ({
               label: f.label,
               value: f.value,
