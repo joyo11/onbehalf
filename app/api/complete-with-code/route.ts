@@ -61,20 +61,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ skipped: next.id, reason: "no_gmail_token" });
   }
 
-  // Dynamic imports keep playwright + browserbase out of module-load.
-  const { gmailForUser, findVerificationCode } = await import("@/lib/gmail");
-  const gmail = gmailForUser(u.refreshToken);
-  const code = await findVerificationCode(gmail, { company: next.company, sinceMinutes: 15 });
-
-  if (!code) {
-    // Email hasn't arrived yet OR isn't in inbox yet. Leave status as
-    // awaitingCode — next cron run will retry.
-    return NextResponse.json({ pending: next.id, reason: "code_not_found_yet" });
-  }
-
-  // Code found — open a fresh session and complete the application.
+  // Dynamic import — completeWithCode pulls in playwright + browserbase
+  // and we don't want those at module-load.
   const { completeWithCode } = await import("@/lib/submit/complete");
-  const result = await completeWithCode(next.id, code).catch((e) => ({
+  const result = await completeWithCode(next.id).catch((e) => ({
     ok: false,
     error: e instanceof Error ? e.message : "unknown",
   }));
@@ -89,7 +79,7 @@ export async function POST(req: Request) {
     }).catch(() => {});
   });
 
-  return NextResponse.json({ completed: next.id, code: code.slice(0, 2) + "…", result });
+  return NextResponse.json({ completed: next.id, result });
 }
 
 // Cron-friendly GET

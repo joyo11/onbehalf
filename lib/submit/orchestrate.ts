@@ -359,12 +359,19 @@ export async function runSubmission(
         );
         // Detect email verification CAPTCHA — Reddit/GitLab/Anthropic
         // intentionally block AI agents with "enter the code we just sent"
-        // walls. When detected, the application moves to 'awaitingCode' so
-        // a separate Vercel cron can poll Gmail and complete it via
-        // /api/complete-with-code.
-        const needsEmailCode = /verification code was sent|security code|enter the .{0,30}character code|confirmation code.{0,40}email/i.test(
-          bodyText.slice(0, 4000),
-        );
+        // walls. Two signals: (1) prompt text anywhere in the rendered
+        // page, (2) a verification-code input appeared. Either is enough.
+        const codeInputCount = await session.page
+          .locator(
+            "input[name*='security' i], input[name*='verification' i], input[name*='confirm_code' i], input[aria-label*='security code' i], input[aria-label*='verification code' i]",
+          )
+          .count()
+          .catch(() => 0);
+        const needsEmailCode =
+          codeInputCount > 0 ||
+          /verification code was sent|security code|enter the .{0,30}character code|confirmation code.{0,40}email|we sent .{0,30}(code|email)|check your (inbox|email)|verify your (application|email)/i.test(
+            bodyText,
+          );
 
         const submitSucceeded = !needsEmailCode && (navigated || looksLikeThankYou);
         realSubmitted = submitSucceeded;
