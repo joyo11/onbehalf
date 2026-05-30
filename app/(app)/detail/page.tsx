@@ -173,12 +173,21 @@ function DetailInner() {
 
   return (
     <div className="max-w-[1180px] mx-auto px-5 sm:px-9 py-6 sm:py-8">
-      <Link
-        href="/dashboard"
-        className="inline-flex items-center gap-2 text-[14px] font-semibold text-ink-mute hover:text-ink transition-colors mb-6"
-      >
-        <Ic.back className="h-4 w-4" /> Back to dashboard
-      </Link>
+      <div className="flex flex-wrap items-center gap-2 text-[14px] font-semibold mb-6">
+        <Link
+          href="/tracker"
+          className="inline-flex items-center gap-1.5 text-ink-mute hover:text-ink transition-colors"
+        >
+          <Ic.back className="h-4 w-4" /> Tracker
+        </Link>
+        <span className="text-ink-faint">·</span>
+        <Link
+          href="/dashboard"
+          className="text-ink-mute hover:text-ink transition-colors"
+        >
+          Dashboard
+        </Link>
+      </div>
 
       <div
         className="ob-hand-in font-hand text-teal-700 mb-1 ml-1"
