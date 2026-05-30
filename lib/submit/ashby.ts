@@ -42,6 +42,26 @@ export async function fillAshbyForm(
   const llmCtx: SmartFillContext | undefined = job ? { profile, job } : undefined;
   const steps: SubmissionStep[] = [];
 
+  // Ashby is a React SPA — domcontentloaded fires before the form mounts.
+  // Wait for ANY of the markers that signal the application form is on
+  // the page: the file-upload input, a system field input, or the form
+  // container. Up to 20s; long enough for slow networks, short enough
+  // that a truly unresponsive page doesn't blow the 60s function budget.
+  const ready = await page
+    .waitForSelector(
+      "input[type='file'], input[name*='_systemfield' i], form[class*='application' i], [class*='ashby-application'], [data-ashby-application-form]",
+      { timeout: 20_000, state: "attached" },
+    )
+    .then(() => true)
+    .catch(() => false);
+  steps.push({ step: "ashby_form_ready", detail: String(ready), ok: ready });
+  if (ready) {
+    // Once a marker is attached, give React one more tick to finish
+    // populating the rest of the fields (helps when the file input
+    // mounts first and the other inputs lag behind).
+    await page.waitForTimeout(800);
+  }
+
   // ── Basic identity ────────────────────────────────────────
   // Ashby uses a single full-name field; fall back to first/last variants
   // for the rare boards that use two inputs.
