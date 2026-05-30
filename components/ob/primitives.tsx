@@ -127,6 +127,7 @@ export type Status =
   | "submitted"
   | "confirmed"
   | "needshuman"
+  | "awaitingcode"
   | "failed"
   | "draft"
   | "pending";
@@ -144,11 +145,16 @@ export const STATUS_META: Record<
   submitted: { label: "Submitted", dot: "#FFFFFF", bg: "#0D9488", fg: "#FFFFFF", solid: true },
   confirmed: { label: "Confirmed", dot: "#7A8B3F", bg: "#E2E7C7", fg: "#54612C" },
   needshuman: { label: "Needs Human", dot: "#C53D2B", bg: "#F6D2C5", fg: "#A8341F" },
+  awaitingcode: { label: "Awaiting code", dot: "#7C5BD3", bg: "#E5DCF7", fg: "#4A2FA3", pulse: true },
   failed: { label: "Failed", dot: "#C53D2B", bg: "#F6D2C5", fg: "#A8341F" },
 };
 
 export function StatusPill({ status, size = "md" }: { status: Status | string; size?: "sm" | "md" }) {
-  const key = (status === "needsHuman" ? "needshuman" : status) as Status;
+  const key = (status === "needsHuman"
+    ? "needshuman"
+    : status === "awaitingCode"
+      ? "awaitingcode"
+      : status) as Status;
   const s = STATUS_META[key] ?? STATUS_META.queued;
   const pad = size === "sm" ? "px-2.5 py-1 text-[12px]" : "px-3 py-1.5 text-[13px]";
   return (

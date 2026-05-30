@@ -65,6 +65,28 @@ export async function POST(req: Request) {
     const result = await runSubmission(next.id, { dryRun: !!body.dryRun });
     console.log("[process-queue] submission result", { id: next.id, ok: result.ok, ats: result.ats });
 
+    // CAPTCHA flow: when runSubmission lands the app in awaitingCode,
+    // fire-and-forget a call to /api/complete-with-code so it can poll
+    // Gmail and finish. We delay ~45s so the verification email has time
+    // to arrive — Reddit/Greenhouse emails are usually inbox-visible
+    // within 5-20s, but we leave headroom.
+    const landed = await db
+      .select({ status: application.status })
+      .from(application)
+      .where(eq(application.id, next.id))
+      .limit(1);
+    if (landed[0]?.status === "awaitingCode") {
+      const origin = new URL(req.url).origin;
+      const auth = req.headers.get("authorization") ?? "";
+      after(async () => {
+        await new Promise((r) => setTimeout(r, 45_000));
+        await fetch(`${origin}/api/complete-with-code`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: auth },
+        }).catch((e) => console.error("complete-with-code trigger failed:", e));
+      });
+    }
+
     // If more queued, re-trigger self.
     const remaining = await db
       .select({ id: application.id })

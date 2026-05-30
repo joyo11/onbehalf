@@ -357,18 +357,32 @@ export async function runSubmission(
         const looksLikeValidationError = /required|please (enter|select|provide|fill)|missing|cannot be (empty|blank)/i.test(
           bodyText.slice(0, 4000),
         );
-        const submitSucceeded = navigated || looksLikeThankYou;
+        // Detect email verification CAPTCHA — Reddit/GitLab/Anthropic
+        // intentionally block AI agents with "enter the code we just sent"
+        // walls. When detected, the application moves to 'awaitingCode' so
+        // a separate Vercel cron can poll Gmail and complete it via
+        // /api/complete-with-code.
+        const needsEmailCode = /verification code was sent|security code|enter the .{0,30}character code|confirmation code.{0,40}email/i.test(
+          bodyText.slice(0, 4000),
+        );
+
+        const submitSucceeded = !needsEmailCode && (navigated || looksLikeThankYou);
         realSubmitted = submitSucceeded;
 
         await logEvent(
           applicationId,
-          submitSucceeded ? "submit_succeeded" : "submit_failed_validation",
+          needsEmailCode
+            ? "awaiting_email_code"
+            : submitSucceeded
+              ? "submit_succeeded"
+              : "submit_failed_validation",
           {
             urlBefore,
             urlAfter,
             navigated,
             looksLikeThankYou,
             looksLikeValidationError,
+            needsEmailCode,
             bodyPreview: bodyText.replace(/\s+/g, " ").slice(0, 600),
           },
         );
@@ -392,10 +406,20 @@ export async function runSubmission(
       });
     }
 
+    // Status precedence:
+    //   awaitingCode  → CAPTCHA hit, cron will retry with Gmail code
+    //   submitted     → really through
+    //   needsHuman    → form-fill failed, user needs to finish manually
+    const needsCodeFlag = steps.find((s) => s.step === "awaiting_email_code");
+    const finalStatus = realSubmitted
+      ? "submitted"
+      : needsCodeFlag
+        ? "awaitingCode"
+        : "needsHuman";
     await db
       .update(application)
       .set({
-        status: realSubmitted ? "submitted" : "needsHuman",
+        status: finalStatus as "submitted" | "awaitingCode" | "needsHuman",
         submittedAt: new Date(),
       })
       .where(eq(application.id, applicationId));

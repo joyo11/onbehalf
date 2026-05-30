@@ -52,6 +52,10 @@ export const applicationStatusEnum = pgEnum("application_status", [
   "failed",
   "needsHuman",
   "draft",
+  // Submit click hit an email-verification CAPTCHA. A separate cron polls
+  // Gmail using the user's refresh token, extracts the code, and re-runs
+  // the form to enter it.
+  "awaitingCode",
 ]);
 
 export const resumeSectionTypeEnum = pgEnum("resume_section_type", [

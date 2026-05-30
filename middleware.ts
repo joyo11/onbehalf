@@ -14,6 +14,7 @@ const isPublic = createRouteMatcher([
   "/api/process-queue",
   "/api/scrape-jobs",
   "/api/check-gmail",
+  "/api/complete-with-code",
   "/api/diag-load",
 ]);
 
