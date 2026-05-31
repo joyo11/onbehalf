@@ -17,11 +17,11 @@
  *   }
  *
  * Coordinate space: chrome.tabs.captureVisibleTab returns the image
- * at CSS pixels (the viewport's coordinate system), which is also
- * what document.elementFromPoint takes. On standard displays they
- * match 1:1. On high-DPI / Retina displays Chrome reports the
- * coordinates in CSS pixels regardless of the underlying screen
- * resolution, so no scaling needed.
+ * at the DEVICE pixel resolution — on Retina that's 2x the viewport.
+ * The background script downscales the screenshot to viewport
+ * dimensions before sending to Claude, so by the time the plan
+ * arrives here, 1 coord pixel == 1 viewport CSS pixel ==
+ * elementFromPoint's coordinate system.
  */
 
 (function () {
@@ -167,10 +167,12 @@
     const el = findFormElementAt(coord.x, coord.y);
     if (!el) {
       result.status = "not_found";
-      result.detail = `nothing at (${coord.x}, ${coord.y})`;
+      result.detail = `nothing at (${coord.x}, ${coord.y}) — viewport=${window.innerWidth}x${window.innerHeight} dpr=${window.devicePixelRatio}`;
+      console.warn(`[Onbehalf] ${fieldName}: not_found at (${coord.x}, ${coord.y})`);
       return result;
     }
     result.detail = `${el.tagName.toLowerCase()}${el.name ? `[name=${el.name}]` : ""}${el.id ? `#${el.id}` : ""}`;
+    console.log(`[Onbehalf] ${fieldName}: hit ${result.detail} at (${coord.x}, ${coord.y})`);
 
     try {
       if (kind === "type") {

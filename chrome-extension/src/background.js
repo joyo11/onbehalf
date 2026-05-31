@@ -94,38 +94,74 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // Phase 7 — capture the visible tab as JPEG so the popup can include
   // it in a direct fetch to /api/extension/computer-use. Lives in
   // background because chrome.tabs.captureVisibleTab needs the
-  // extension's privileged context. Returns inside ~200ms — well
-  // under the message-port lifetime.
+  // extension's privileged context.
+  //
+  // CRITICAL: captureVisibleTab returns the image at the device's pixel
+  // resolution. On Retina (devicePixelRatio = 2), the image is 2x the
+  // viewport's CSS pixels. document.elementFromPoint and Claude's plan
+  // must agree on coordinate space, so we downscale the screenshot to
+  // CSS pixel dimensions before sending it to Claude. Then 1 pixel in
+  // the screenshot == 1 viewport pixel == what elementFromPoint uses.
   if (msg.type === "CAPTURE_TAB") {
     (async () => {
       try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        // Ask the page itself for its viewport dimensions — captureVisibleTab
-        // returns CSS pixels and document.elementFromPoint expects the same,
-        // so the dimensions we capture are what Claude should use to plan
-        // coordinates against.
         let viewportWidth = null;
         let viewportHeight = null;
+        let dpr = 1;
         if (tab?.id) {
           try {
             const [{ result }] = await chrome.scripting.executeScript({
               target: { tabId: tab.id },
-              func: () => ({ w: window.innerWidth, h: window.innerHeight }),
+              func: () => ({
+                w: window.innerWidth,
+                h: window.innerHeight,
+                dpr: window.devicePixelRatio || 1,
+              }),
             });
             viewportWidth = result?.w ?? null;
             viewportHeight = result?.h ?? null;
+            dpr = result?.dpr ?? 1;
           } catch {
             // best-effort
           }
         }
         const dataUrl = await chrome.tabs.captureVisibleTab(undefined, {
           format: "jpeg",
-          quality: 70,
+          quality: 80,
         });
-        const screenshot = dataUrl.replace(/^data:image\/[^;]+;base64,/, "");
+
+        let screenshot;
+        if (dpr === 1 || !viewportWidth || !viewportHeight) {
+          screenshot = dataUrl.replace(/^data:image\/[^;]+;base64,/, "");
+        } else {
+          // Downscale to viewport dimensions. Service workers have
+          // OffscreenCanvas + createImageBitmap, so we can do this
+          // entirely in the background.
+          const blob = await (await fetch(dataUrl)).blob();
+          const bitmap = await createImageBitmap(blob);
+          const canvas = new OffscreenCanvas(viewportWidth, viewportHeight);
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(bitmap, 0, 0, viewportWidth, viewportHeight);
+          const resized = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.8 });
+          const buf = await resized.arrayBuffer();
+          // Convert ArrayBuffer to base64 without spreading (avoid the
+          // 'arguments too long' crash on large buffers)
+          const bytes = new Uint8Array(buf);
+          let binary = "";
+          const chunk = 0x8000;
+          for (let i = 0; i < bytes.length; i += chunk) {
+            binary += String.fromCharCode.apply(
+              null,
+              bytes.subarray(i, i + chunk),
+            );
+          }
+          screenshot = btoa(binary);
+        }
+
         sendResponse({
           ok: true,
-          body: { screenshot, viewportWidth, viewportHeight },
+          body: { screenshot, viewportWidth, viewportHeight, dpr },
         });
       } catch (e) {
         sendResponse({
