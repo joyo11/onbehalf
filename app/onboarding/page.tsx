@@ -251,7 +251,12 @@ function OnboardingInner() {
           {step === 6 && <OnbVoice value={voice} onChange={setVoice} />}
         </div>
 
-        <div className="mt-12 flex items-center justify-between">
+        {/* Spacer so the sticky action bar never overlaps the last form field */}
+        <div className="h-24" aria-hidden />
+      </div>
+
+      <div className="sticky bottom-0 z-20 border-t border-line bg-paper/95 backdrop-blur">
+        <div className="max-w-[760px] mx-auto px-6 py-4 flex items-center justify-between">
           <Button
             variant="ghost"
             onClick={back}
