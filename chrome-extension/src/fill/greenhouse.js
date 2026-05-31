@@ -580,6 +580,45 @@
     return bytes;
   }
 
+  /**
+   * Dedicated upload-only entry point used by the auto-fill flow.
+   * Skips every text/select/smart-fill step that the auto-fill
+   * walker handles. Returns a tiny summary the executor can show in
+   * the popup result list.
+   */
+  async function uploadFilesOnly(profile) {
+    const result = { resume: null, coverLetter: null };
+    if (profile?.resume?.bytes) {
+      const bytes = base64ToBytes(profile.resume.bytes);
+      result.resume = (await uploadResume(profile.resume.filename, bytes))
+        ? { status: "filled", filename: profile.resume.filename }
+        : { status: "skipped", detail: "no matching input" };
+    } else {
+      result.resume = { status: "skipped", detail: "no resume bytes" };
+    }
+    if (profile?.coverLetter) {
+      const cbBytes = profile.coverLetter.bytes
+        ? base64ToBytes(profile.coverLetter.bytes)
+        : null;
+      const how = await uploadCoverLetter(
+        profile.coverLetter.filename,
+        cbBytes,
+        profile.coverLetter.text,
+      );
+      if (how === "file") {
+        result.coverLetter = { status: "filled", how: "file" };
+      } else if (how === "textarea") {
+        result.coverLetter = { status: "filled", how: "textarea" };
+      } else {
+        result.coverLetter = { status: "skipped", detail: "no matching input/textarea" };
+      }
+    } else {
+      result.coverLetter = { status: "skipped", detail: "no cover letter" };
+    }
+    return result;
+  }
+
   // Expose for content.js to call.
   window.__onbehalfFillGreenhouse = fillGreenhouseForm;
+  window.__onbehalfUploadFilesOnly = uploadFilesOnly;
 })();

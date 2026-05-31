@@ -122,9 +122,27 @@ async function init() {
 async function runAutoFill() {
   if (!cachedJob || cachedTabId == null) return;
   show("state-loading");
-  setLoadingText("Reading the form…");
   const tab = { id: cachedTabId };
 
+  // Stage 0 — file uploads (resume + cover letter) using the proven
+  // greenhouse.js upload path. This is the one piece Shafay confirmed
+  // works reliably. Done BEFORE the LLM walk so file inputs are
+  // populated by the time we report the summary.
+  setLoadingText("Uploading resume + cover letter…");
+  const uploadResp = await tellTab(tab, {
+    type: "UPLOAD_FILES",
+    profile: {
+      resume: cachedJob.resume ?? null,
+      coverLetter: cachedJob.coverLetter ?? null,
+    },
+  });
+  if (uploadResp?.ok) {
+    console.log("[Onbehalf] upload stage result:", uploadResp.result);
+  } else {
+    console.warn("[Onbehalf] upload stage failed:", uploadResp?.error);
+  }
+
+  setLoadingText("Reading the form…");
   // Stage 1: ask the content script to walk the form and return an
   // inventory of every field.
   const walkResp = await tellTab(tab, { type: "WALK_FORM" });
@@ -193,6 +211,19 @@ async function runAutoFill() {
   head.style.fontWeight = "700";
   head.style.borderBottom = "0";
   $("filled-list").appendChild(head);
+
+  // Surface the resume + cover letter upload status from stage 0
+  if (uploadResp?.ok && uploadResp.result) {
+    const u = uploadResp.result;
+    const li = document.createElement("li");
+    const rTag = u.resume?.status === "filled" ? "✓" : "—";
+    const cTag = u.coverLetter?.status === "filled" ? "✓" : "—";
+    li.textContent = `${rTag} Resume · ${cTag} Cover letter`;
+    li.style.fontWeight = "600";
+    li.style.fontSize = "12px";
+    li.title = `resume: ${JSON.stringify(u.resume)} · cover: ${JSON.stringify(u.coverLetter)}`;
+    $("filled-list").appendChild(li);
+  }
 
   // Show details for filled (high-confidence first) and skipped fields.
   // Cap at 18 lines so the popup stays readable.

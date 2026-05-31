@@ -88,6 +88,19 @@ if (!window[ONBEHALF_MARKER]) {
       return false;
     }
 
+    if (msg?.type === "UPLOAD_FILES") {
+      const upload = window.__onbehalfUploadFilesOnly;
+      if (!upload) {
+        sendResponse({ ok: false, error: "upload helper not loaded" });
+        return false;
+      }
+      upload(msg.profile).then(
+        (result) => sendResponse({ ok: true, result }),
+        (err) => sendResponse({ ok: false, error: err?.message ?? "upload threw" }),
+      );
+      return true;
+    }
+
     if (msg?.type === "EXECUTE_ANSWERS") {
       const exec = window.__onbehalfExecuteAnswers;
       const inv = window.__onbehalfLastInventory;
