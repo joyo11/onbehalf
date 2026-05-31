@@ -204,7 +204,7 @@ async function runAutoFill() {
   $("filled-list").innerHTML = "";
   const head = document.createElement("li");
   head.textContent =
-    `${r.summary.filled}/${r.summary.total} filled · ${r.summary.skipped} skipped · ${r.summary.errored} errored · cost ~$${cost.toFixed(3)}`;
+    `${r.summary.filled}/${r.summary.total} filled · ${r.summary.skipped} skipped · ${r.summary.errored} errored`;
   head.style.fontWeight = "700";
   head.style.borderBottom = "0";
   $("filled-list").appendChild(head);

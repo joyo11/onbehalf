@@ -239,32 +239,6 @@ export default function SearchScreen({ defaults }: { defaults: SearchDefaults })
             </div>
           </Block>
 
-          <Block label="When to submit">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <ModeCard
-                active={mode === "review-each"}
-                onClick={() => setMode("review-each")}
-                title="Review each"
-                body="I'll prepare every application. You approve before submit."
-                icon={Ic.eye}
-              />
-              <ModeCard
-                active={mode === "auto-high"}
-                onClick={() => setMode("auto-high")}
-                title="Auto-submit > 85"
-                body="I'll submit the obvious wins. Lower scores wait for you."
-                icon={Ic.bolt}
-                recommended
-              />
-              <ModeCard
-                active={mode === "auto-all"}
-                onClick={() => setMode("auto-all")}
-                title="Auto-submit all"
-                body="Trust me with everything in this batch. No review needed."
-                icon={Ic.send}
-              />
-            </div>
-          </Block>
         </div>
 
         <div className="col-span-12 lg:col-span-4">

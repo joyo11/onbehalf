@@ -350,7 +350,7 @@
       el(
         "div",
         { className: "footnote" },
-        "Resume + cover letter included. Roughly $0.005 per application. We stop at submit — you review and click yourself.",
+        "Resume + cover letter included. We stop at submit — you review and click yourself.",
       ),
     );
   }
@@ -399,7 +399,7 @@
       el(
         "div",
         { className: "summary-line" },
-        `${filled} of ${total} done · $${cost.toFixed(3)}`,
+        `${filled} of ${total} done`,
       ),
     );
     root.appendChild(
