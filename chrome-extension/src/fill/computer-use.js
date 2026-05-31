@@ -107,29 +107,55 @@
       return { ok: false, reason: "option not in <select>" };
     }
 
-    // React-Select: click to open, find option element, click it.
-    // Need to click the CONTROL not necessarily what elementFromPoint
-    // returned (which could be a child of the control). Do NOT
-    // scrollIntoView — same reasoning as doType (would shift the
-    // viewport for subsequent actions).
+    // React-Select: click to open, type into the filter input so the
+    // virtualized option list renders the option we want, then click
+    // it. Do NOT scrollIntoView — same reasoning as doType (would
+    // shift the viewport for subsequent actions).
     const control =
       el.closest?.("[class*='select__control' i], [class*='Select__control' i]") ?? el;
     control.click();
-    await sleep(400); // wait for menu portal to mount
+    await sleep(350); // wait for menu portal to mount
+
+    // After opening, React-Select focuses a hidden combobox input.
+    // Type the target text so the menu filters down to a small list
+    // — necessary for huge dropdowns like Country (200+ options) that
+    // virtualize and only render ~10 options at a time.
+    const filterInput =
+      control.querySelector?.("input[role='combobox'], input[type='text']") ??
+      document.activeElement;
+    if (filterInput && filterInput.tagName === "INPUT") {
+      try {
+        await surface.fill(filterInput, optionText);
+        await sleep(250); // let the filter re-render
+      } catch {
+        /* fall through to non-filtered search */
+      }
+    }
 
     // Find option whose visible text matches target. Look across the
     // whole document because React-Select portals the menu to body.
-    const optionEls = Array.from(
-      document.querySelectorAll(
-        "[role='option'], [class*='option' i]:not([class*='disabled' i])",
-      ),
-    ).filter((o) => {
-      const r = o.getBoundingClientRect();
-      return r.width > 0 && r.height > 0;
-    });
-    const match = optionEls.find(
+    function findOptions() {
+      return Array.from(
+        document.querySelectorAll(
+          "[role='option'], [class*='option' i]:not([class*='disabled' i])",
+        ),
+      ).filter((o) => {
+        const r = o.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      });
+    }
+    let optionEls = findOptions();
+    let match = optionEls.find(
       (o) => (o.textContent ?? "").trim().toLowerCase() === target,
     );
+    // If exact match isn't visible yet, give the menu another beat.
+    if (!match) {
+      await sleep(200);
+      optionEls = findOptions();
+      match = optionEls.find(
+        (o) => (o.textContent ?? "").trim().toLowerCase() === target,
+      );
+    }
     if (match) {
       match.click();
       await sleep(150);
@@ -146,7 +172,7 @@
     }
     // Close menu by pressing Escape
     document.body.click();
-    return { ok: false, reason: `option "${optionText}" not visible after open` };
+    return { ok: false, reason: `option "${optionText}" not visible after filter` };
   }
 
   async function executeAction(action) {
