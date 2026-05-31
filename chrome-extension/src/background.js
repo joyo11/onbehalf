@@ -91,6 +91,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  // Phase 8h — auto-fill API call from the in-page overlay.
+  // Content scripts can't credentialed-fetch onbehalfai.vercel.app
+  // directly (CORS), so the overlay sends this message and we make
+  // the call from the extension's privileged origin.
+  if (msg.type === "AUTO_FILL_API") {
+    api(`/api/extension/auto-fill`, {
+      method: "POST",
+      body: JSON.stringify(msg.payload),
+    }).then(sendResponse);
+    return true;
+  }
+
   // Phase 7 — capture the visible tab as JPEG so the popup can include
   // it in a direct fetch to /api/extension/computer-use. Lives in
   // background because chrome.tabs.captureVisibleTab needs the

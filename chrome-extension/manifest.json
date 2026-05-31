@@ -31,7 +31,8 @@
         "src/fill/computer-use.js",
         "src/fill/walker.js",
         "src/fill/auto-fill.js",
-        "src/content.js"
+        "src/content.js",
+        "src/overlay.js"
       ],
       "run_at": "document_idle"
     }
