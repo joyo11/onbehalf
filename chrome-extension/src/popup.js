@@ -27,6 +27,11 @@ function setError(text) {
   show("state-error");
 }
 
+function setLoadingText(text) {
+  const el = $("loading-text") || $("state-loading");
+  if (el) el.textContent = text;
+}
+
 async function send(msg) {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(msg, (resp) => {
