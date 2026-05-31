@@ -67,6 +67,44 @@ if (!window[ONBEHALF_MARKER]) {
       );
       return true;
     }
+
+    // Phase 8 — DOM walk + auto-fill. Two-stage so the popup can show
+    // progress between walking, calling Claude, and applying answers.
+    if (msg?.type === "WALK_FORM") {
+      const walk = window.__onbehalfWalkForm;
+      if (!walk) {
+        sendResponse({ ok: false, error: "walker not loaded" });
+        return false;
+      }
+      try {
+        const inv = walk();
+        // Keep the refs map in window memory so EXECUTE_ANSWERS can
+        // look them back up. Send only the field specs to the popup.
+        window.__onbehalfLastInventory = inv;
+        sendResponse({ ok: true, fields: inv.fields });
+      } catch (e) {
+        sendResponse({ ok: false, error: e?.message ?? "walk threw" });
+      }
+      return false;
+    }
+
+    if (msg?.type === "EXECUTE_ANSWERS") {
+      const exec = window.__onbehalfExecuteAnswers;
+      const inv = window.__onbehalfLastInventory;
+      if (!exec) {
+        sendResponse({ ok: false, error: "auto-fill executor not loaded" });
+        return false;
+      }
+      if (!inv) {
+        sendResponse({ ok: false, error: "no inventory — call WALK_FORM first" });
+        return false;
+      }
+      exec(msg.answers, inv.refs).then(
+        (result) => sendResponse({ ok: true, result }),
+        (err) => sendResponse({ ok: false, error: err?.message ?? "execute threw" }),
+      );
+      return true;
+    }
     return false;
   });
 }

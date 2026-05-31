@@ -112,9 +112,117 @@ async function init() {
   $("ready-job-title").textContent = cachedJob.application.title;
   $("ready-job-company").textContent = cachedJob.application.company;
   show("state-ready-to-fill");
+  $("run-auto-fill").onclick = runAutoFill;
   $("run-fill").onclick = runFill;
-  $("run-vision-dryrun").onclick = () => runVisionFill({ dryRun: true });
   $("run-vision-real").onclick = () => runVisionFill({ dryRun: false });
+}
+
+/**
+ * Phase 8 — DOM walk → one Claude call → fill via DOM.
+ * The primary path. Cheap, fast, no screenshots.
+ */
+async function runAutoFill() {
+  if (!cachedJob || cachedTabId == null) return;
+  show("state-loading");
+  setLoadingText("Reading the form…");
+  const tab = { id: cachedTabId };
+
+  // Stage 1: ask the content script to walk the form and return an
+  // inventory of every field.
+  const walkResp = await tellTab(tab, { type: "WALK_FORM" });
+  if (!walkResp?.ok) {
+    setError(walkResp?.error ?? "Couldn't read the form on this page.");
+    return;
+  }
+  const fields = walkResp.fields ?? [];
+  if (fields.length === 0) {
+    setError("No fillable fields found on this page.");
+    return;
+  }
+  console.log(`[Onbehalf] walker found ${fields.length} fields:`, fields);
+
+  // Stage 2: send the inventory to the server. Claude returns one
+  // answer per field.
+  setLoadingText(`Asking Claude to answer ${fields.length} fields…`);
+  let resp;
+  try {
+    const res = await fetch("https://onbehalfai.vercel.app/api/extension/auto-fill", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        applicationId: cachedJob.application.id,
+        fields,
+      }),
+    });
+    resp = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(resp?.error ?? `Server returned ${res.status}.`);
+      return;
+    }
+  } catch (e) {
+    setError(`Network error: ${e?.message ?? "unknown"}`);
+    return;
+  }
+  const answers = resp.answers ?? [];
+  const cost = resp.tokenCost ?? 0;
+  console.log(`[Onbehalf] Claude returned ${answers.length} answers (cost $${cost.toFixed(4)}):`, answers);
+
+  // Stage 3: hand the answers to the executor to apply via DOM.
+  setLoadingText(`Filling ${answers.filter((a) => a.action !== "skip").length} fields…`);
+  const execResp = await tellTab(tab, { type: "EXECUTE_ANSWERS", answers });
+  if (!execResp?.ok || !execResp.result) {
+    setError(execResp?.error ?? "Filler threw.");
+    return;
+  }
+  const r = execResp.result;
+
+  // Render summary in the popup
+  $("filled-list").innerHTML = "";
+  const head = document.createElement("li");
+  head.textContent =
+    `${r.summary.filled}/${r.summary.total} filled · ${r.summary.skipped} skipped · ${r.summary.errored} errored · cost ~$${cost.toFixed(3)}`;
+  head.style.fontWeight = "700";
+  head.style.borderBottom = "0";
+  $("filled-list").appendChild(head);
+
+  // Show details for filled (high-confidence first) and skipped fields.
+  // Cap at 18 lines so the popup stays readable.
+  const interesting = r.results.slice(0, 18);
+  for (const item of interesting) {
+    const li = document.createElement("li");
+    const tag =
+      item.status === "filled"
+        ? "✓"
+        : item.status === "filled_partial"
+          ? "≈"
+          : item.status === "skipped"
+            ? "—"
+            : "✗";
+    const valuePreview =
+      item.action === "skip"
+        ? `(${item.reason ?? "no data"})`
+        : String(item.value ?? "—").slice(0, 50);
+    li.textContent = `${tag} ${item.label || item.id}: ${valuePreview}`;
+    li.style.fontWeight = "400";
+    li.style.fontSize = "12px";
+    li.title = `${item.action} · confidence: ${item.confidence ?? "?"} · ${item.reason ?? ""}`;
+    $("filled-list").appendChild(li);
+  }
+  if (r.results.length > 18) {
+    const li = document.createElement("li");
+    li.textContent = `+ ${r.results.length - 18} more`;
+    li.style.color = "var(--ink-mute)";
+    $("filled-list").appendChild(li);
+  }
+
+  $("skipped-line").textContent =
+    r.summary.errored > 0
+      ? `${r.summary.errored} fields couldn't be filled — review on the page before submitting.`
+      : "Review the form on the page, then approve to submit.";
+  show("state-filled");
+  $("approve-submit").onclick = () => clickSubmit(tab, true);
+  $("cancel-fill").onclick = () => window.close();
 }
 
 async function runVisionFill({ dryRun }) {

@@ -29,6 +29,8 @@
         "src/fill/dom-surface.js",
         "src/fill/greenhouse.js",
         "src/fill/computer-use.js",
+        "src/fill/walker.js",
+        "src/fill/auto-fill.js",
         "src/content.js"
       ],
       "run_at": "document_idle"
