@@ -30,6 +30,19 @@
   }
 
   async function fillText(el, value) {
+    // Hard guard: setNativeValue can ONLY operate on real HTMLInputElement
+    // / HTMLTextAreaElement instances. If Claude returned action="fill"
+    // for a non-input ref (typically a React-Select control wrapper),
+    // calling fill would throw "Illegal invocation". Fail loud here so
+    // the caller marks it as wrong_action rather than the executor
+    // crashing through the whole answer list.
+    if (el.tagName !== "INPUT" && el.tagName !== "TEXTAREA") {
+      const err = new Error(
+        `cannot fill ${el.tagName} via text — model returned 'fill' for a non-input element`,
+      );
+      err.code = "WRONG_ACTION";
+      throw err;
+    }
     try {
       el.focus();
     } catch {
@@ -216,7 +229,11 @@
       result.status = "unknown_action";
       return result;
     } catch (e) {
-      result.status = "errored";
+      if (e?.code === "WRONG_ACTION") {
+        result.status = "wrong_action";
+      } else {
+        result.status = "errored";
+      }
       result.detail = e?.message ?? "unknown error";
       console.warn(`[Onbehalf] ${answer.id} (${ref?.tagName ?? "?"}) errored:`, e);
       return result;
@@ -277,34 +294,37 @@
   }
 
   /**
-   * Handle the file_resume field: fetch the resume PDF bytes from the
-   * server, build a File object, and drop it on the input via
-   * DataTransfer. React forms also need a 'change' event.
+   * Handle the file_resume field: take the resume PDF base64 (passed
+   * in from the popup, which got it in the auto-fill response), build
+   * a File object, drop it on the input via DataTransfer.
+   *
+   * No cross-origin fetch here — content scripts run in the host
+   * page's origin and credentialed fetches fail CORS.
    */
-  async function handleResumeField(fileEl) {
+  async function handleResumeField(fileEl, resumeBase64, resumeFileName) {
+    if (!resumeBase64) {
+      return {
+        status: "errored",
+        detail: "no resume PDF in auto-fill response (profile.resumePdf empty?)",
+      };
+    }
     try {
-      const res = await fetch("https://onbehalfai.vercel.app/api/extension/resume", {
-        method: "GET",
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        return { status: "errored", detail: e?.error ?? `server ${res.status}` };
-      }
-      const data = await res.json();
-      const { filename, mime, base64 } = data;
-      // Decode base64 → Uint8Array → File
-      const binary = atob(base64);
+      const binary = atob(resumeBase64);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      await surface.setFile(fileEl, filename, bytes, mime);
-      return { status: "filled", detail: `uploaded ${filename}` };
+      await surface.setFile(
+        fileEl,
+        resumeFileName || "resume.pdf",
+        bytes,
+        "application/pdf",
+      );
+      return { status: "filled", detail: `uploaded ${resumeFileName || "resume.pdf"}` };
     } catch (e) {
       return { status: "errored", detail: e?.message ?? "resume upload threw" };
     }
   }
 
-  async function executeAnswers(answers, refs, inventory) {
+  async function executeAnswers(answers, refs, inventory, extras) {
     const results = [];
     // Snapshot scroll so per-field focus doesn't drift the viewport
     const baseScrollX = window.scrollX;
@@ -320,32 +340,19 @@
       }
     }
 
-    // Second pass — file uploads the LLM can't do via text.
+    // Second pass — file uploads the LLM can't do via text. extras
+    // carries the cover letter text and resume bytes that came back
+    // in the same /api/extension/auto-fill response, so we don't need
+    // a cross-origin fetch here (would fail CORS).
     if (Array.isArray(inventory)) {
-      // Look up cover letter text from the application context via the
-      // answer for any "cover letter" textarea field, OR by reusing the
-      // server's slim profile. Easiest: ask the page if the popup
-      // injected it. We'll fall back to a small inline endpoint hit.
-      let coverLetterText = window.__onbehalfCoverLetterText ?? null;
-      if (!coverLetterText) {
-        try {
-          const r = await fetch(
-            "https://onbehalfai.vercel.app/api/extension/cover-letter",
-            { credentials: "include" },
-          );
-          if (r.ok) {
-            const j = await r.json().catch(() => null);
-            coverLetterText = j?.text ?? null;
-          }
-        } catch {
-          /* keep going */
-        }
-      }
+      const coverLetterText = extras?.coverLetterText ?? null;
+      const resumeBase64 = extras?.resumePdfBase64 ?? null;
+      const resumeFileName = extras?.resumeFileName ?? null;
 
       const fileResumeFields = inventory.filter((f) => f.type === "file_resume");
       const fileCoverFields = inventory.filter((f) => f.type === "file_cover_letter");
       console.log(
-        `[Onbehalf] post-pass: ${fileResumeFields.length} resume field(s), ${fileCoverFields.length} cover-letter field(s); cover letter text length=${coverLetterText?.length ?? 0}`,
+        `[Onbehalf] post-pass: ${fileResumeFields.length} resume field(s), ${fileCoverFields.length} cover-letter field(s); cover letter chars=${coverLetterText?.length ?? 0}; resume bytes=${resumeBase64?.length ?? 0}`,
       );
 
       for (const field of fileResumeFields) {
@@ -355,7 +362,7 @@
           continue;
         }
         console.log(`[Onbehalf] uploading resume to`, ref);
-        const out = await handleResumeField(ref);
+        const out = await handleResumeField(ref, resumeBase64, resumeFileName);
         console.log(`[Onbehalf] resume upload result:`, out);
         results.push({
           id: field.id,

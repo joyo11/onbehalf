@@ -171,7 +171,16 @@ async function runAutoFill() {
 
   // Stage 3: hand the answers to the executor to apply via DOM.
   setLoadingText(`Filling ${answers.filter((a) => a.action !== "skip").length} fields…`);
-  const execResp = await tellTab(tab, { type: "EXECUTE_ANSWERS", answers, inventory: fields });
+  const execResp = await tellTab(tab, {
+    type: "EXECUTE_ANSWERS",
+    answers,
+    inventory: fields,
+    extras: {
+      coverLetterText: resp.coverLetterText ?? null,
+      resumePdfBase64: resp.resumePdfBase64 ?? null,
+      resumeFileName: resp.resumeFileName ?? null,
+    },
+  });
   if (!execResp?.ok || !execResp.result) {
     setError(execResp?.error ?? "Filler threw.");
     return;

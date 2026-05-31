@@ -52,43 +52,87 @@
       .trim();
   }
 
+  // Labels like "Attach", "Choose file", "Browse" wrap the file input
+  // itself but they're widget chrome — not the field's real name.
+  // For file inputs, skip these and keep climbing for the field name.
+  const FILE_WIDGET_LABEL_RX =
+    /^(attach|choose file|choose a file|browse|upload|upload a file|select file|select a file|no file chosen)$/i;
+
   function labelFor(el) {
+    const isFileInput = el.tagName === "INPUT" && el.type === "file";
+
     // 1. <label for="id">
     if (el.id) {
       try {
         const lbl = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
         if (lbl) {
           const t = cleanText(lbl.textContent);
-          if (t) return t;
+          if (t && !(isFileInput && FILE_WIDGET_LABEL_RX.test(t))) return t;
         }
       } catch {
         /* ignore selector errors */
       }
     }
-    // 2. ancestor <label>
+    // 2. ancestor <label> — but if it's a file-widget label ("Attach"),
+    // ignore it and fall through.
     const ancestorLabel = el.closest?.("label");
     if (ancestorLabel) {
       const t = cleanText(ancestorLabel.textContent);
-      if (t) return t;
+      if (t && !(isFileInput && FILE_WIDGET_LABEL_RX.test(t))) return t;
     }
-    // 3. preceding <label> within the same field wrapper
-    const wrapper =
-      el.closest?.(
-        "div.field, .form-field, .application-question, [class*='field' i], .form-group, .input-group, [class*='question' i]",
-      ) ?? el.parentElement;
-    if (wrapper) {
-      const lbl = wrapper.querySelector("label");
-      if (lbl) {
+    // 3. preceding <label> / heading within the field wrapper. For
+    // file inputs, climb up to TWO wrapper levels because Greenhouse
+    // / Lever / Ashby commonly use nested wrappers:
+    //   <div class="field">
+    //     <div class="label">Resume/CV *</div>      ← what we want
+    //     <div class="file-widget">
+    //       <label>Attach<input type="file"></label> ← what we have
+    //     </div>
+    //   </div>
+    function readWrapperLabel(node) {
+      if (!node) return "";
+      // Try real <label> first
+      const labels = Array.from(node.querySelectorAll("label"));
+      for (const lbl of labels) {
+        if (lbl.contains(el)) continue; // skip the widget-wrapping label
         const t = cleanText(lbl.textContent);
-        if (t) return t;
+        if (t && !(isFileInput && FILE_WIDGET_LABEL_RX.test(t))) return t;
       }
-      // For React-Select: a div with text immediately before the control
-      const labelDiv = wrapper.querySelector(
-        "[class*='label' i]:not([class*='placeholder' i]):not([class*='select' i])",
+      // Then a [class*=label] div / span
+      const labelDivs = Array.from(
+        node.querySelectorAll(
+          "[class*='label' i]:not([class*='placeholder' i]):not([class*='select' i])",
+        ),
       );
-      if (labelDiv) {
-        const t = cleanText(labelDiv.textContent);
-        if (t) return t;
+      for (const lbl of labelDivs) {
+        if (lbl.contains(el)) continue;
+        const t = cleanText(lbl.textContent);
+        if (t && !(isFileInput && FILE_WIDGET_LABEL_RX.test(t))) return t;
+      }
+      // Then a heading
+      const heading = node.querySelector("h2, h3, h4, h5, h6, legend");
+      if (heading) {
+        const t = cleanText(heading.textContent);
+        if (t && !(isFileInput && FILE_WIDGET_LABEL_RX.test(t))) return t;
+      }
+      return "";
+    }
+
+    const wrapperSelector =
+      "div.field, .form-field, .application-question, [class*='field' i], .form-group, .input-group, [class*='question' i]";
+    const wrapper = el.closest?.(wrapperSelector) ?? el.parentElement;
+    if (wrapper) {
+      const t = readWrapperLabel(wrapper);
+      if (t) return t;
+      // Climb once more for file inputs — the widget wrapper is usually
+      // nested inside the actual field wrapper.
+      if (isFileInput) {
+        const grand =
+          wrapper.parentElement?.closest?.(wrapperSelector) ?? wrapper.parentElement;
+        if (grand && grand !== wrapper) {
+          const tg = readWrapperLabel(grand);
+          if (tg) return tg;
+        }
       }
     }
     // 4. aria

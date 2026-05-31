@@ -268,8 +268,25 @@ export async function POST(req: Request) {
       );
     }
 
+    // Bundle the cover letter text + resume PDF into the response so
+    // the extension's content-script executor doesn't need to make
+    // separate cross-origin fetches (CORS blocks those because the
+    // content script runs in the host page's origin, e.g.
+    // greenhouse.io, and credentialed fetches require an exact
+    // Access-Control-Allow-Origin header).
+    let resumePdfBase64: string | null = null;
+    let resumeFileName: string | null = null;
+    if (p.resumePdf) {
+      const buf = Buffer.from(p.resumePdf);
+      resumePdfBase64 = buf.toString("base64");
+      resumeFileName = p.resumeFileName ?? "resume.pdf";
+    }
+
     return NextResponse.json({
       answers: parsed.answers,
+      coverLetterText: row.appCoverLetter ?? null,
+      resumePdfBase64,
+      resumeFileName,
       usage: response.usage,
       tokenCost:
         ((response.usage.input_tokens ?? 0) / 1_000_000) * 1 +
