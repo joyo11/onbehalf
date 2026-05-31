@@ -2,6 +2,7 @@
 
 /*  Onboarding — 7 steps, sticky progress bar. */
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -320,7 +321,9 @@ function OnboardingInner() {
       {/* Sticky progress */}
       <div className="sticky top-0 z-20 bg-sand/90 backdrop-blur border-b border-line">
         <div className="max-w-[760px] mx-auto px-6 h-16 flex items-center gap-6">
-          <Wordmark size={18} />
+          <Link href="/" className="focus-ring rounded-ctrl">
+            <Wordmark size={18} />
+          </Link>
           <div className="flex-1 flex items-center gap-3">
             <div className="flex-1">
               <Progress value={step} max={total} />
