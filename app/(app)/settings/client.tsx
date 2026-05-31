@@ -84,7 +84,6 @@ export default function SettingsScreen({ data }: { data: SettingsData }) {
         </div>
 
         <div className="space-y-5 lg:sticky lg:top-9 self-start">
-          <GmailCard connectedAt={data.gmailConnectedAt} />
           <RerunOnboardingCard />
         </div>
       </div>

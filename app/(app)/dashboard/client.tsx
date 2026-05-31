@@ -105,35 +105,6 @@ export default function DashboardClient({ firstName, stats, recent, gmailConnect
             )}
           </RailCard>
 
-          <RailCard delay={90}>
-            <div className="flex items-center justify-between mb-2.5">
-              <Eyebrow>Gmail</Eyebrow>
-              <Ic.mail className="h-[17px] w-[17px] text-ink-faint" />
-            </div>
-            {gmailConnected ? (
-              <>
-                <p className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-teal-700">
-                  <Ic.checkCircle className="h-4 w-4" /> Connected
-                </p>
-                <p className="text-[13px] text-ink-mute mt-2 leading-relaxed">
-                  We check your inbox daily and mark applications as Confirmed.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-[13px] text-ink-mute leading-relaxed">
-                  Connect Gmail to auto-detect confirmation emails.
-                </p>
-                <Link
-                  href="/api/auth/google/start"
-                  className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-teal-700 hover:text-teal-800"
-                >
-                  Connect now <Ic.arrow className="h-3 w-3" />
-                </Link>
-              </>
-            )}
-          </RailCard>
-
           <RailCard delay={140}>
             <Eyebrow className="mb-3">Try next</Eyebrow>
             <ul className="space-y-2.5 text-[14px] font-medium text-ink-soft">
