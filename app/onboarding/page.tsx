@@ -255,7 +255,7 @@ function OnboardingInner() {
         <div className="h-24" aria-hidden />
       </div>
 
-      <div className="sticky bottom-0 z-20 border-t border-line bg-paper/95 backdrop-blur">
+      <div className="sticky bottom-0 z-30 border-t border-line bg-paper shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.08)]">
         <div className="max-w-[760px] mx-auto px-6 py-4 flex items-center justify-between">
           <Button
             variant="ghost"
