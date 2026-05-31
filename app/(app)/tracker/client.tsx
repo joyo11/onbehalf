@@ -486,7 +486,6 @@ function TrackerTable({
               <th className="px-2 py-2.5 font-medium">JD</th>
               <th className="px-2 py-2.5 font-medium">CL</th>
               <th className="px-2 py-2.5 font-medium">Resume</th>
-              <th className="px-2 py-2.5 font-medium">Tailoring Changes</th>
               <th className="px-2 py-2.5 font-medium">Status</th>
               <th className="px-2 py-2.5 font-medium">Confirmation</th>
             </tr>
@@ -494,7 +493,7 @@ function TrackerTable({
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={11}>
+                <td colSpan={10}>
                   <EmptyResults />
                 </td>
               </tr>
@@ -545,19 +544,6 @@ function TrackerTable({
                   </td>
                   <td className="px-2 py-2.5">
                     <DocLink icon="file" label="View" onClick={() => onOpenDoc({ kind: "resume", row: r })} />
-                  </td>
-                  <td className="px-2 py-2.5">
-                    <div className="flex items-start gap-2 min-w-0">
-                      <span className="text-ink-soft truncate" title={r.changes}>
-                        {r.changes}
-                      </span>
-                      <button
-                        onClick={() => onOpenDoc({ kind: "diff", row: r })}
-                        className="shrink-0 text-[12px] text-accent hover:text-accent-hover hover:underline underline-offset-2 focus-ring rounded-ctrl"
-                      >
-                        see diff
-                      </button>
-                    </div>
                   </td>
                   <td className="px-2 py-2.5">
                     <StatusPill status={r.status} />
