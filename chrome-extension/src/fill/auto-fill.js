@@ -223,7 +223,88 @@
     }
   }
 
-  async function executeAnswers(answers, refs) {
+  /**
+   * Find the "Enter manually" / "Enter text" link near a file input.
+   * Greenhouse-style forms render this as a button or anchor right
+   * below the file picker. Clicking it swaps the file input for a
+   * textarea so candidates can paste text directly.
+   */
+  function findEnterManuallyLink(fileEl) {
+    const wrapper =
+      fileEl.closest?.(
+        "div.field, .form-field, .application-question, [class*='field' i], .form-group, [class*='question' i]",
+      ) ?? fileEl.parentElement?.parentElement;
+    if (!wrapper) return null;
+    const candidates = Array.from(
+      wrapper.querySelectorAll("button, a, [role='button'], span"),
+    );
+    return (
+      candidates.find((c) => {
+        const t = lc(c.textContent);
+        return (
+          t === "enter manually" ||
+          t === "paste" ||
+          t === "paste manually" ||
+          t.includes("enter manually") ||
+          t.includes("enter text")
+        );
+      }) || null
+    );
+  }
+
+  /**
+   * Handle the file_cover_letter field: click "Enter manually" to
+   * reveal a textarea, then fill it with the application's cover
+   * letter text. Falls back to noop if the link isn't there.
+   */
+  async function handleCoverLetterField(fileEl, coverLetterText) {
+    if (!coverLetterText) return { status: "skipped", detail: "no cover letter text" };
+    fileEl.scrollIntoView({ behavior: "instant", block: "center" });
+    await sleep(60);
+    const wrapper =
+      fileEl.closest?.(
+        "div.field, .form-field, .application-question, [class*='field' i], .form-group, [class*='question' i]",
+      ) ?? fileEl.parentElement?.parentElement;
+    const link = findEnterManuallyLink(fileEl);
+    if (!link) return { status: "skipped", detail: "no Enter manually link" };
+    link.click();
+    await sleep(400);
+    // After click, look for the textarea that just appeared in the same wrapper
+    const ta = wrapper?.querySelector?.("textarea");
+    if (!ta) return { status: "errored", detail: "textarea did not appear" };
+    await fillText(ta, coverLetterText);
+    return { status: "filled", detail: "cover letter pasted via Enter manually" };
+  }
+
+  /**
+   * Handle the file_resume field: fetch the resume PDF bytes from the
+   * server, build a File object, and drop it on the input via
+   * DataTransfer. React forms also need a 'change' event.
+   */
+  async function handleResumeField(fileEl) {
+    try {
+      const res = await fetch("https://onbehalfai.vercel.app/api/extension/resume", {
+        method: "GET",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        return { status: "errored", detail: e?.error ?? `server ${res.status}` };
+      }
+      const data = await res.json();
+      const { filename, mime, base64 } = data;
+      // Decode base64 → Uint8Array → File
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      await surface.setFile(fileEl, filename, bytes, mime);
+      return { status: "filled", detail: `uploaded ${filename}` };
+    } catch (e) {
+      return { status: "errored", detail: e?.message ?? "resume upload threw" };
+    }
+  }
+
+  async function executeAnswers(answers, refs, inventory) {
     const results = [];
     // Snapshot scroll so per-field focus doesn't drift the viewport
     const baseScrollX = window.scrollX;
@@ -236,6 +317,61 @@
       await sleep(80);
       if (window.scrollX !== baseScrollX || window.scrollY !== baseScrollY) {
         window.scrollTo(baseScrollX, baseScrollY);
+      }
+    }
+
+    // Second pass — file uploads the LLM can't do via text.
+    if (Array.isArray(inventory)) {
+      // Look up cover letter text from the application context via the
+      // answer for any "cover letter" textarea field, OR by reusing the
+      // server's slim profile. Easiest: ask the page if the popup
+      // injected it. We'll fall back to a small inline endpoint hit.
+      let coverLetterText = window.__onbehalfCoverLetterText ?? null;
+      if (!coverLetterText) {
+        try {
+          const r = await fetch(
+            "https://onbehalfai.vercel.app/api/extension/cover-letter",
+            { credentials: "include" },
+          );
+          if (r.ok) {
+            const j = await r.json().catch(() => null);
+            coverLetterText = j?.text ?? null;
+          }
+        } catch {
+          /* keep going */
+        }
+      }
+
+      for (const field of inventory) {
+        const ref = refs[field.id];
+        if (!ref) continue;
+        if (field.type === "file_resume") {
+          const out = await handleResumeField(ref);
+          results.push({
+            id: field.id,
+            label: field.label,
+            action: "upload",
+            value: "(resume PDF)",
+            confidence: "high",
+            reason: "extension uploads resume from profile",
+            status: out.status,
+            detail: out.detail,
+          });
+          await sleep(150);
+        } else if (field.type === "file_cover_letter") {
+          const out = await handleCoverLetterField(ref, coverLetterText);
+          results.push({
+            id: field.id,
+            label: field.label,
+            action: "fill",
+            value: "(cover letter)",
+            confidence: "high",
+            reason: "extension pastes cover letter via Enter manually",
+            status: out.status,
+            detail: out.detail,
+          });
+          await sleep(150);
+        }
       }
     }
 

@@ -34,6 +34,7 @@ type RequestBody = {
   prefs: PrefsPayload;
   voice: string;
   gmailConnected: boolean;
+  totalYearsExperience?: string | null;
 };
 
 function buildLocation(about: AboutPayload): string | null {
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Body must be JSON." }, { status: 400 });
   }
 
-  const { about, roles, prefs, voice, gmailConnected } = body;
+  const { about, roles, prefs, voice, gmailConnected, totalYearsExperience } = body;
   if (!about || !roles || !prefs) {
     return NextResponse.json({ error: "Missing fields." }, { status: 400 });
   }
@@ -86,6 +87,7 @@ export async function POST(req: Request) {
       earliestStartDate: prefs.earliestStartDate || null,
       voiceSample: voice.trim() || existing.voiceSample,
       excludedCompanies: existing.excludedCompanies,
+      totalYearsExperience: totalYearsExperience ?? existing.totalYearsExperience,
       updatedAt: new Date(),
     })
     .where(eq(profile.id, existing.id));

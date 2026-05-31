@@ -142,8 +142,9 @@ async function runAutoFill() {
   console.log(`[Onbehalf] walker found ${fields.length} fields:`, fields);
 
   // Stage 2: send the inventory to the server. Claude returns one
-  // answer per field.
-  setLoadingText(`Asking Claude to answer ${fields.length} fields…`);
+  // answer per field. (The "N" below is whatever the walker found on
+  // THIS particular form — dynamic, not hard-coded.)
+  setLoadingText(`Sending all ${fields.length} fields on this form to Claude…`);
   let resp;
   try {
     const res = await fetch("https://onbehalfai.vercel.app/api/extension/auto-fill", {
@@ -170,7 +171,7 @@ async function runAutoFill() {
 
   // Stage 3: hand the answers to the executor to apply via DOM.
   setLoadingText(`Filling ${answers.filter((a) => a.action !== "skip").length} fields…`);
-  const execResp = await tellTab(tab, { type: "EXECUTE_ANSWERS", answers });
+  const execResp = await tellTab(tab, { type: "EXECUTE_ANSWERS", answers, inventory: fields });
   if (!execResp?.ok || !execResp.result) {
     setError(execResp?.error ?? "Filler threw.");
     return;

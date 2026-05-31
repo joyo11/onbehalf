@@ -1,9 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db/client";
-import { application, job, profile } from "@/lib/db/schema";
+import { application, job, profile, resumeSection } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
 export const maxDuration = 45;
@@ -30,7 +30,19 @@ export const maxDuration = 45;
 type FieldSpec = {
   id: string;
   label: string;
-  type: "text" | "email" | "tel" | "url" | "textarea" | "select" | "radio" | "checkbox" | "react-select" | "file";
+  type:
+    | "text"
+    | "email"
+    | "tel"
+    | "url"
+    | "textarea"
+    | "select"
+    | "radio"
+    | "checkbox"
+    | "react-select"
+    | "file"
+    | "file_resume"
+    | "file_cover_letter";
   options?: string[];
   required?: boolean;
   placeholder?: string;
@@ -67,10 +79,11 @@ RULES:
 4. For "Why do you want to join X?" textareas: write 3-4 substantive sentences using profile + JD context. NO filler openers ("I am excited to apply") — get to substance.
 5. For COVER LETTER textareas (often labeled "Additional Information"): use the profile.coverLetter verbatim. Do not rewrite.
 6. NEVER mention any company other than the target company (from JOB CONTEXT) in any free-text answer. If the candidate's cached cover letter mentions a different company, rewrite the relevant sentence around the target company only.
-7. For file upload fields (type=file, label contains "resume" or "cv"): always skip with reason "extension uploads resume separately". The extension handles file uploads outside this flow.
+7. For file upload fields (type=file, file_resume, or file_cover_letter): always skip with reason "extension handles file uploads separately". The extension uploads the resume PDF and fills the cover letter via the form's 'Enter manually' link AFTER your answers apply — do not try to fill these via text.
 8. For "How did you hear about us?" type fields: if the profile has no source, pick "LinkedIn" if it's an option, otherwise skip.
-9. ABSTAIN (skip) rather than guess when the right answer requires interview judgment ("Describe a project", "Why are you a good fit") UNLESS this is the only Why-X textarea, in which case fill it.
-10. Output ONE JSON object: { answers: [...] }. No prose around it.`;
+9. INTERVIEW-STYLE QUESTIONS — answer them. Questions like "How are you using AI today in your current role?", "Describe a project you're proud of", "What excites you about X?", "Tell us about a recent technical challenge" are NOT reasons to abstain. The candidate's profile includes a RESUME SECTIONS block with their experience, projects, skills, summary, and education — use it. Write 3-5 substantive sentences naming SPECIFIC technologies, projects, and outcomes from the resume sections. NO filler ("I am passionate about..."), NO unverifiable claims, NO hallucinating projects that aren't on the resume. If asked about AI specifically and the resume mentions specific AI work (LLMs, RAG, fine-tuning, AI products like PurpleHire, generative models), lean into those by name.
+10. Only abstain when the answer requires the candidate to take a stance the profile genuinely doesn't reveal (e.g., "What's your salary expectation?" with no salary data; specific dates the profile doesn't mention; legally sensitive opinion).
+11. Output ONE JSON object: { answers: [...] }. No prose around it.`;
 
 function safeSlim(s: string | null | undefined, max = 1500): string {
   if (!s) return "";
@@ -125,6 +138,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
 
+    // Load resume sections so Claude has structured context for
+    // interview-style questions (projects, experience, skills, summary,
+    // education). Each row has bullets[] (the actual content) plus
+    // optional title / organization / dates.
+    const sections = await db
+      .select({
+        type: resumeSection.type,
+        title: resumeSection.title,
+        organization: resumeSection.organization,
+        startDate: resumeSection.startDate,
+        endDate: resumeSection.endDate,
+        bullets: resumeSection.bullets,
+        tags: resumeSection.tags,
+      })
+      .from(resumeSection)
+      .where(eq(resumeSection.userId, user.id))
+      .orderBy(asc(resumeSection.type));
+
     if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json(
         { error: "ANTHROPIC_API_KEY not configured." },
@@ -157,8 +188,32 @@ export async function POST(req: Request) {
       eeoSexualOrientation: p.eeoSexualOrientation,
       currentCompany: p.currentCompany,
       currentJobTitle: p.currentJobTitle,
+      totalYearsExperience: p.totalYearsExperience,
       coverLetter: row.appCoverLetter ?? null,
     };
+
+    // Group resume sections by type. Claude uses these as ground truth
+    // for interview-style answers.
+    type SectionForLlm = {
+      title: string | null;
+      organization: string | null;
+      dates: string | null;
+      bullets: string[];
+      tags: string[];
+    };
+    const sectionsByType: Record<string, SectionForLlm[]> = {};
+    for (const s of sections) {
+      const arr = (sectionsByType[s.type] ??= []);
+      const dates =
+        s.startDate || s.endDate ? `${s.startDate ?? ""} → ${s.endDate ?? "present"}` : null;
+      arr.push({
+        title: s.title ?? null,
+        organization: s.organization ?? null,
+        dates,
+        bullets: (s.bullets ?? []).map((b) => safeSlim(b, 240)).filter(Boolean),
+        tags: s.tags ?? [],
+      });
+    }
 
     const userText = [
       "JOB CONTEXT",
@@ -168,6 +223,9 @@ export async function POST(req: Request) {
       "",
       "CANDIDATE PROFILE (JSON)",
       JSON.stringify(slimProfile, null, 2),
+      "",
+      "RESUME SECTIONS (use these for interview-style answers — name specific projects, technologies, outcomes)",
+      JSON.stringify(sectionsByType, null, 2),
       "",
       "FORM FIELDS (JSON list — answer every one by id)",
       JSON.stringify(body.fields, null, 2),

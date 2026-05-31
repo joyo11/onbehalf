@@ -99,7 +99,7 @@ if (!window[ONBEHALF_MARKER]) {
         sendResponse({ ok: false, error: "no inventory — call WALK_FORM first" });
         return false;
       }
-      exec(msg.answers, inv.refs).then(
+      exec(msg.answers, inv.refs, msg.inventory ?? inv.fields).then(
         (result) => sendResponse({ ok: true, result }),
         (err) => sendResponse({ ok: false, error: err?.message ?? "execute threw" }),
       );

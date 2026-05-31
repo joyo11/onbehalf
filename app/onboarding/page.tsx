@@ -127,6 +127,7 @@ function OnboardingInner() {
   const [gmailError, setGmailError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState<boolean>(false);
   const [finishError, setFinishError] = useState<string | null>(null);
+  const [yoe, setYoe] = useState<string>("");
 
   // Pick up the result of the Google OAuth round-trip on /onboarding?gmail=...
   const sp = useSearchParams();
@@ -205,7 +206,14 @@ function OnboardingInner() {
       const res = await fetch("/api/profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ about, roles, prefs, voice, gmailConnected }),
+        body: JSON.stringify({
+          about,
+          roles,
+          prefs,
+          voice,
+          gmailConnected,
+          totalYearsExperience: yoe || null,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `Failed (${res.status})`);
@@ -246,7 +254,7 @@ function OnboardingInner() {
           {step === 1 && <OnbResume parsed={parsed} onParsed={handleParsed} />}
           {step === 2 && <OnbAbout parsed={parsed} form={about} setForm={setAbout} />}
           {step === 3 && <OnbRoles roles={roles} setRoles={setRoles} />}
-          {step === 4 && <OnbExperience parsed={parsed} />}
+          {step === 4 && <OnbExperience parsed={parsed} yoe={yoe} setYoe={setYoe} />}
           {step === 5 && <OnbPreferences prefs={prefs} setPrefs={setPrefs} />}
           {step === 6 && <OnbVoice value={voice} onChange={setVoice} />}
         </div>
@@ -918,7 +926,24 @@ function Segmented({
 }
 
 /* ---------- Step 4: Experience ---------- */
-function OnbExperience({ parsed }: { parsed: ParsedResume | null }) {
+const YOE_BUCKETS = [
+  "Under 1 year",
+  "1-2 years",
+  "3-5 years",
+  "5-7 years",
+  "8-10 years",
+  "10+ years",
+];
+
+function OnbExperience({
+  parsed,
+  yoe,
+  setYoe,
+}: {
+  parsed: ParsedResume | null;
+  yoe: string;
+  setYoe: (v: string) => void;
+}) {
   // Build the initial skills list from the parsed resume. If the resume parse
   // didn't return any skills, start empty and let the user add manually.
   const seeded: SkillYear[] = (parsed?.skills ?? []).map((s) => ({
@@ -954,6 +979,32 @@ function OnbExperience({ parsed }: { parsed: ParsedResume | null }) {
             : "Upload your resume in step 1 to auto-fill, or add skills manually below."
         }
       />
+
+      <SectionLabel className="mb-2">Total full-time work experience</SectionLabel>
+      <Card className="p-4 mb-8">
+        <p className="text-[12.5px] text-mute mb-3">
+          We use this to answer "How many years of experience do you have?" on application forms.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {YOE_BUCKETS.map((bucket) => {
+            const selected = yoe === bucket;
+            return (
+              <button
+                key={bucket}
+                type="button"
+                onClick={() => setYoe(bucket)}
+                className={`px-3 py-1.5 rounded-ctrl text-[13px] border transition-colors ${
+                  selected
+                    ? "border-ink bg-ink text-paper"
+                    : "border-line bg-white text-ink hover:border-ink/30"
+                }`}
+              >
+                {bucket}
+              </button>
+            );
+          })}
+        </div>
+      </Card>
 
       {skills.length === 0 ? (
         <Card className="p-8 text-center">

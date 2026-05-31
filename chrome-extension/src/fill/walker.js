@@ -324,19 +324,22 @@
       });
     }
 
-    // 6. File inputs (the LLM will skip these — the extension handles
-    // resume upload separately)
+    // 6. File inputs — classify as resume / cover-letter / generic so
+    // the executor knows what to upload after the LLM answers come back.
     const fileEls = Array.from(document.querySelectorAll("input[type='file']")).filter(
-      (el) => !isHidden(el) || /resume|cv|attach/i.test(labelFor(el) || ""),
+      (el) => !isHidden(el) || /resume|cv|cover|attach/i.test(labelFor(el) || ""),
     );
     for (const el of fileEls) {
-      const label = labelFor(el) || "Resume/CV";
+      const label = labelFor(el) || "File";
+      let subtype = "file";
+      if (/resume|cv|curriculum/i.test(label)) subtype = "file_resume";
+      else if (/cover.*letter/i.test(label)) subtype = "file_cover_letter";
       const id = nextId();
       refs[id] = el;
       fields.push({
         id,
         label,
-        type: "file",
+        type: subtype,
         required: isRequired(el),
       });
     }
