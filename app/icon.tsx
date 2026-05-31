@@ -13,16 +13,16 @@ export default function Icon() {
         style={{
           width: "100%",
           height: "100%",
-          background: "#F3EFE6",
-          color: "#1B1B19",
+          background: "#1B1B19",
+          color: "#F3EFE6",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: 22,
+          fontSize: 24,
           fontFamily: "Georgia, serif",
           fontWeight: 600,
           letterSpacing: "-0.02em",
-          borderRadius: 6,
+          borderRadius: 7,
         }}
       >
         O
