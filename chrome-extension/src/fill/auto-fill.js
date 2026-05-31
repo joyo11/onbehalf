@@ -342,36 +342,54 @@
         }
       }
 
-      for (const field of inventory) {
+      const fileResumeFields = inventory.filter((f) => f.type === "file_resume");
+      const fileCoverFields = inventory.filter((f) => f.type === "file_cover_letter");
+      console.log(
+        `[Onbehalf] post-pass: ${fileResumeFields.length} resume field(s), ${fileCoverFields.length} cover-letter field(s); cover letter text length=${coverLetterText?.length ?? 0}`,
+      );
+
+      for (const field of fileResumeFields) {
         const ref = refs[field.id];
-        if (!ref) continue;
-        if (field.type === "file_resume") {
-          const out = await handleResumeField(ref);
-          results.push({
-            id: field.id,
-            label: field.label,
-            action: "upload",
-            value: "(resume PDF)",
-            confidence: "high",
-            reason: "extension uploads resume from profile",
-            status: out.status,
-            detail: out.detail,
-          });
-          await sleep(150);
-        } else if (field.type === "file_cover_letter") {
-          const out = await handleCoverLetterField(ref, coverLetterText);
-          results.push({
-            id: field.id,
-            label: field.label,
-            action: "fill",
-            value: "(cover letter)",
-            confidence: "high",
-            reason: "extension pastes cover letter via Enter manually",
-            status: out.status,
-            detail: out.detail,
-          });
-          await sleep(150);
+        if (!ref) {
+          console.warn(`[Onbehalf] resume field ${field.id} has no ref`);
+          continue;
         }
+        console.log(`[Onbehalf] uploading resume to`, ref);
+        const out = await handleResumeField(ref);
+        console.log(`[Onbehalf] resume upload result:`, out);
+        results.push({
+          id: field.id,
+          label: field.label,
+          action: "upload",
+          value: "(resume PDF)",
+          confidence: "high",
+          reason: "extension uploads resume from profile",
+          status: out.status,
+          detail: out.detail,
+        });
+        await sleep(150);
+      }
+
+      for (const field of fileCoverFields) {
+        const ref = refs[field.id];
+        if (!ref) {
+          console.warn(`[Onbehalf] cover-letter field ${field.id} has no ref`);
+          continue;
+        }
+        console.log(`[Onbehalf] pasting cover letter into`, ref);
+        const out = await handleCoverLetterField(ref, coverLetterText);
+        console.log(`[Onbehalf] cover letter result:`, out);
+        results.push({
+          id: field.id,
+          label: field.label,
+          action: "fill",
+          value: "(cover letter)",
+          confidence: "high",
+          reason: "extension pastes cover letter via Enter manually",
+          status: out.status,
+          detail: out.detail,
+        });
+        await sleep(150);
       }
     }
 

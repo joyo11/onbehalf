@@ -326,9 +326,11 @@
 
     // 6. File inputs — classify as resume / cover-letter / generic so
     // the executor knows what to upload after the LLM answers come back.
-    const fileEls = Array.from(document.querySelectorAll("input[type='file']")).filter(
-      (el) => !isHidden(el) || /resume|cv|cover|attach/i.test(labelFor(el) || ""),
-    );
+    // Don't filter by visibility — ATSes routinely hide the real <input>
+    // behind a styled Attach button (the input is display:none but still
+    // accepts a FileList via DataTransfer).
+    const fileEls = Array.from(document.querySelectorAll("input[type='file']"));
+    console.log(`[Onbehalf walker] found ${fileEls.length} file input(s) total`);
     for (const el of fileEls) {
       const label = labelFor(el) || "File";
       let subtype = "file";
@@ -342,6 +344,7 @@
         type: subtype,
         required: isRequired(el),
       });
+      console.log(`[Onbehalf walker] file input → ${subtype} · label="${label}"`);
     }
 
     return { fields, refs };
