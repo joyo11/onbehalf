@@ -113,8 +113,6 @@ async function init() {
   $("ready-job-company").textContent = cachedJob.application.company;
   show("state-ready-to-fill");
   $("run-auto-fill").onclick = runAutoFill;
-  $("run-fill").onclick = runFill;
-  $("run-vision-real").onclick = () => runVisionFill({ dryRun: false });
 }
 
 /**
