@@ -103,6 +103,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  // After the user clicks the page's Submit button via our overlay's
+  // "Approve and submit" CTA: mark the application submitted on the
+  // server, then open the tracker so they can see status updated.
+  if (msg.type === "MARK_SUBMITTED_AND_OPEN_TRACKER") {
+    (async () => {
+      const resp = await api(`/api/applications/${msg.applicationId}/mark-submitted`, {
+        method: "POST",
+      });
+      // Open tracker regardless of the API result — if the call failed,
+      // the tracker page itself will surface the discrepancy.
+      const base = await getApiBase();
+      chrome.tabs.create({ url: `${base}/tracker?just=${msg.applicationId}` });
+      sendResponse(resp);
+    })();
+    return true;
+  }
+
   // Phase 7 — capture the visible tab as JPEG so the popup can include
   // it in a direct fetch to /api/extension/computer-use. Lives in
   // background because chrome.tabs.captureVisibleTab needs the

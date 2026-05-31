@@ -458,19 +458,75 @@
     if ((r.results?.length ?? 0) > 10) {
       root.appendChild(el("div", { className: "more" }, `+ ${r.results.length - 10} more`));
     }
+    // Stack: primary "Approve and submit" + ghost "Just review"
+    root.appendChild(
+      el(
+        "button",
+        {
+          className: "primary",
+          style: { marginTop: "4px" },
+          onClick: approveAndSubmit,
+        },
+        "Approve and submit",
+      ),
+    );
     root.appendChild(
       el(
         "button",
         {
           className: "ghost",
+          style: { marginTop: "8px" },
           onClick: () => {
-            // Scroll to first not-filled-required field on the page
             scrollToFirstUnfilledRequired();
           },
         },
-        "Review on page → Submit",
+        "Review on page first",
       ),
     );
+  }
+
+  /**
+   * Click the form's Submit button, mark the application submitted on
+   * the server, open the tracker. We trust the user — they reviewed
+   * before clicking our button.
+   */
+  async function approveAndSubmit() {
+    if (!job?.application?.id) return;
+    // Find the page's submit button. Try a few patterns common across
+    // Greenhouse / Lever / Ashby.
+    const sel = [
+      "button[type='submit']",
+      "input[type='submit']",
+      "button[aria-label*='submit' i]",
+    ];
+    let submitEl = null;
+    for (const s of sel) {
+      const matches = Array.from(document.querySelectorAll(s));
+      for (const m of matches) {
+        const r = m.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          submitEl = m;
+          break;
+        }
+      }
+      if (submitEl) break;
+    }
+    if (!submitEl) {
+      renderError("Couldn't find the Submit button on this page. Click it yourself.");
+      return;
+    }
+
+    // Tell the server first so the tracker row updates before the page
+    // navigates away from us.
+    send({
+      type: "MARK_SUBMITTED_AND_OPEN_TRACKER",
+      applicationId: job.application.id,
+    });
+
+    submitEl.click();
+    // Close the overlay — the page is probably about to navigate
+    // anyway, but if not we don't want to be in the user's face.
+    setTimeout(unmount, 400);
   }
 
   function renderError(msg) {

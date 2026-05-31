@@ -8,6 +8,9 @@ import { COUNTRIES, US_STATES, formatLocation } from "@/lib/locations";
 
 type AboutPayload = {
   name: string;
+  firstName?: string;
+  lastName?: string;
+  preferredName?: string;
   pronouns: string;
   email: string;
   phone: string;
@@ -24,6 +27,7 @@ type PrefsPayload = {
   workAuth: "us_citizen_pr" | "needs_sponsorship" | "other" | "";
   workAuthOther?: string;
   futureSponsorship?: "yes" | "no" | "";
+  willingToRelocate?: "no" | "within_country" | "anywhere" | "";
   workPreference: { remote: boolean; hybrid: boolean; onsite: boolean };
   salaryMin: number; // thousands
   earliestStartDate: string; // YYYY-MM-DD
@@ -37,6 +41,7 @@ type RequestBody = {
   voice: string;
   gmailConnected: boolean;
   totalYearsExperience?: string | null;
+  yearsExperienceAfterGraduation?: string | null;
 };
 
 function buildLocation(about: AboutPayload): string | null {
@@ -61,7 +66,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Body must be JSON." }, { status: 400 });
   }
 
-  const { about, roles, prefs, voice, gmailConnected, totalYearsExperience } = body;
+  const {
+    about,
+    roles,
+    prefs,
+    voice,
+    gmailConnected,
+    totalYearsExperience,
+    yearsExperienceAfterGraduation,
+  } = body;
   if (!about || !roles || !prefs) {
     return NextResponse.json({ error: "Missing fields." }, { status: 400 });
   }
@@ -69,10 +82,21 @@ export async function POST(req: Request) {
   const existing = await getOrCreateProfile(user);
   const location = buildLocation(about);
 
+  // Prefer the explicit first/last/preferred fields; fall back to
+  // splitting `name` for legacy clients.
+  const fullNameStr =
+    about.name ||
+    [about.firstName, about.lastName].filter(Boolean).join(" ").trim() ||
+    existing.fullName ||
+    "";
+
   await db
     .update(profile)
     .set({
-      fullName: about.name || existing.fullName,
+      fullName: fullNameStr,
+      firstName: about.firstName?.trim() || existing.firstName,
+      lastName: about.lastName?.trim() || existing.lastName,
+      preferredName: about.preferredName?.trim() || existing.preferredName,
       phone: about.phone || existing.phone,
       location,
       linkedinUrl: about.linkedin || existing.linkedinUrl,
@@ -86,6 +110,7 @@ export async function POST(req: Request) {
       needsSponsorship:
         prefs.futureSponsorship === "yes" ||
         prefs.workAuth === "needs_sponsorship",
+      willingToRelocate: prefs.willingToRelocate || existing.willingToRelocate,
       openToRemote: prefs.workPreference.remote,
       openToHybrid: prefs.workPreference.hybrid,
       openToOnsite: prefs.workPreference.onsite,
@@ -95,6 +120,8 @@ export async function POST(req: Request) {
       voiceSample: voice.trim() || existing.voiceSample,
       excludedCompanies: existing.excludedCompanies,
       totalYearsExperience: totalYearsExperience ?? existing.totalYearsExperience,
+      yearsExperienceAfterGraduation:
+        yearsExperienceAfterGraduation ?? existing.yearsExperienceAfterGraduation,
       updatedAt: new Date(),
     })
     .where(eq(profile.id, existing.id));

@@ -111,6 +111,18 @@ export const profile = pgTable("profile", {
 
   targetRoleTitles: text("target_role_titles").array().notNull().default(sql`'{}'::text[]`),
   totalYearsExperience: text("total_years_experience"), // bucket: 0-2 / 3-5 / 6-8 / 9-12 / 13+
+  // Some forms ask "years AFTER graduation" specifically (Airtable does)
+  // — this is a different number than totalYearsExperience for anyone
+  // who worked before finishing school.
+  yearsExperienceAfterGraduation: text("years_experience_after_graduation"),
+  // "Are you willing to relocate?" — bucket value:
+  //   "no" / "within_country" / "anywhere"
+  willingToRelocate: text("willing_to_relocate"),
+  // Explicit name fields — fullName stays as the canonical concatenation
+  // for legacy queries, but firstName / lastName / preferredName are
+  // the ones forms ask for.
+  firstName: text("first_name"),
+  lastName: text("last_name"),
   // Self-identified job-title level — used as a hard filter on matches so
   // a Mid candidate doesn't see Staff/Principal listings.
   seniorityLevel: text("seniority_level"), // junior | mid | senior | staff | principal
@@ -128,7 +140,6 @@ export const profile = pgTable("profile", {
   openToRemote: boolean("open_to_remote").notNull().default(true),
   openToHybrid: boolean("open_to_hybrid").notNull().default(true),
   openToOnsite: boolean("open_to_onsite").notNull().default(false),
-  willingToRelocate: boolean("willing_to_relocate").notNull().default(false),
   preferredLocations: text("preferred_locations").array().notNull().default(sql`'{}'::text[]`),
 
   desiredSalaryMin: integer("desired_salary_min"),

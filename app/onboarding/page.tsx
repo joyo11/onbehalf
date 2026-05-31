@@ -55,30 +55,27 @@ function isValidLinkedIn(url: string): boolean {
 }
 
 /**
- * Quick heuristic for keyboard mash / pasted nonsense in the voice
- * sample. Catches obvious garbage without blocking creative writing.
+ * Block only OBVIOUS keyboard mash. Real writing — even repetitive,
+ * even informal, even with the same idea phrased three different ways
+ * — should sail through. We are not a writing tutor.
  *
- * Flags as gibberish when ANY of:
- *   - any 5+ same chars in a row ("aaaaa", "kkkkk")
- *   - any 6+ chars from the same keyboard row with no spaces
- *     ("qwertyu", "asdfghj")
- *   - average word length < 2 (lots of single letters separated by
- *     spaces — "a s d f g h j")
- *   - fewer than 6 unique word stems in a 30+ word sample
+ * Flags as gibberish only when ANY of:
+ *   - 6+ same chars in a row ("aaaaaa", "kkkkkk")
+ *   - 8+ chars from the same keyboard row run together with no space
+ *     ("qwertyuiop", "asdfghjkl")
+ *   - avg word length under 1.5 chars (genuine single-letter spam)
  */
 function looksLikeGibberish(text: string): boolean {
   const t = text.trim().toLowerCase();
   if (!t) return false;
-  if (/([a-z])\1{4,}/.test(t)) return true;
-  if (/[qwertyuiop]{6,}/.test(t)) return true;
-  if (/[asdfghjkl]{6,}/.test(t)) return true;
-  if (/[zxcvbnm]{6,}/.test(t)) return true;
+  if (/([a-z])\1{5,}/.test(t)) return true;
+  if (/[qwertyuiop]{8,}/.test(t)) return true;
+  if (/[asdfghjkl]{8,}/.test(t)) return true;
+  if (/[zxcvbnm]{8,}/.test(t)) return true;
   const words = t.split(/\s+/).filter(Boolean);
-  if (words.length >= 10) {
+  if (words.length >= 15) {
     const avgLen = words.reduce((n, w) => n + w.length, 0) / words.length;
-    if (avgLen < 2) return true;
-    const unique = new Set(words.map((w) => w.replace(/[^a-z]/g, "").slice(0, 4)));
-    if (unique.size < Math.max(6, words.length / 6)) return true;
+    if (avgLen < 1.5) return true;
   }
   return false;
 }
@@ -124,6 +121,9 @@ const ONBOARDING_STEPS = [
 
 export type AboutForm = {
   name: string;
+  firstName: string;
+  lastName: string;
+  preferredName: string;
   pronouns: string;
   email: string;
   phone: string;
@@ -140,6 +140,7 @@ export type PrefsForm = {
   workAuth: "us_citizen_pr" | "needs_sponsorship" | "other" | "";
   workAuthOther: string; // free text when workAuth === "other" (e.g. "OPT", "OPT STEM")
   futureSponsorship: "yes" | "no" | ""; // separate from current auth — common form question
+  willingToRelocate: "no" | "within_country" | "anywhere" | "";
   workPreference: { remote: boolean; hybrid: boolean; onsite: boolean };
   salaryMin: number; // in thousands USD
   earliestStartDate: string; // YYYY-MM-DD or ""
@@ -150,6 +151,7 @@ const EMPTY_PREFS: PrefsForm = {
   workAuth: "",
   workAuthOther: "",
   futureSponsorship: "",
+  willingToRelocate: "",
   workPreference: { remote: true, hybrid: true, onsite: false },
   salaryMin: 50,
   earliestStartDate: "",
@@ -158,6 +160,9 @@ const EMPTY_PREFS: PrefsForm = {
 
 const EMPTY_ABOUT: AboutForm = {
   name: "",
+  firstName: "",
+  lastName: "",
+  preferredName: "",
   pronouns: "",
   email: "",
   phone: "",
@@ -191,6 +196,7 @@ function OnboardingInner() {
   const [finishing, setFinishing] = useState<boolean>(false);
   const [finishError, setFinishError] = useState<string | null>(null);
   const [yoe, setYoe] = useState<string>("");
+  const [yoeAfterGrad, setYoeAfterGrad] = useState<string>("");
 
   // Pick up the result of the Google OAuth round-trip on /onboarding?gmail=...
   const sp = useSearchParams();
@@ -217,9 +223,18 @@ function OnboardingInner() {
     if (!p) return;
     const c = p.contact;
     const loc = guessCountryStateFrom(c.location);
+    // Split the parsed full name into first / last so step 1 can show
+    // them as editable fields. preferredName defaults to firstName.
+    const fullName = (c.name ?? "").trim();
+    const parts = fullName.split(/\s+/);
+    const first = parts[0] ?? "";
+    const last = parts.length > 1 ? parts.slice(1).join(" ") : "";
     setAbout((prev) => ({
       ...prev,
       name: prev.name || c.name || "",
+      firstName: prev.firstName || first,
+      lastName: prev.lastName || last,
+      preferredName: prev.preferredName || first,
       email: prev.email || c.email || "",
       phone: prev.phone || c.phone || "",
       linkedin: prev.linkedin || c.linkedin || "",
@@ -256,19 +271,14 @@ function OnboardingInner() {
         return false;
       }
       if (!prefs.futureSponsorship) return false;
+      if (!prefs.willingToRelocate) return false;
       const wp = prefs.workPreference;
       if (!wp.remote && !wp.hybrid && !wp.onsite) return false;
       if (prefs.locations.length === 0) return false;
       if (!prefs.earliestStartDate) return false;
       return true;
     }
-    if (step === 6) {
-      const txt = voice.trim();
-      const wordCount = txt.split(/\s+/).filter(Boolean).length;
-      if (wordCount < 30) return false;
-      if (looksLikeGibberish(txt)) return false;
-      return true;
-    }
+    if (step === 6) return voice.trim().split(/\s+/).filter(Boolean).length >= 30;
     return true;
   })();
 
@@ -286,6 +296,7 @@ function OnboardingInner() {
           voice,
           gmailConnected,
           totalYearsExperience: yoe || null,
+          yearsExperienceAfterGraduation: yoeAfterGrad || null,
         }),
       });
       const data = await res.json();
@@ -324,10 +335,25 @@ function OnboardingInner() {
 
       <div className="max-w-[760px] mx-auto px-6 py-14">
         <div key={step} className="anim-pop">
-          {step === 1 && <OnbResume parsed={parsed} onParsed={handleParsed} />}
+          {step === 1 && (
+            <OnbResume
+              parsed={parsed}
+              onParsed={handleParsed}
+              about={about}
+              setAbout={setAbout}
+            />
+          )}
           {step === 2 && <OnbAbout parsed={parsed} form={about} setForm={setAbout} />}
           {step === 3 && <OnbRoles roles={roles} setRoles={setRoles} />}
-          {step === 4 && <OnbExperience parsed={parsed} yoe={yoe} setYoe={setYoe} />}
+          {step === 4 && (
+            <OnbExperience
+              parsed={parsed}
+              yoe={yoe}
+              setYoe={setYoe}
+              yoeAfterGrad={yoeAfterGrad}
+              setYoeAfterGrad={setYoeAfterGrad}
+            />
+          )}
           {step === 5 && <OnbPreferences prefs={prefs} setPrefs={setPrefs} />}
           {step === 6 && <OnbVoice value={voice} onChange={setVoice} />}
         </div>
@@ -355,9 +381,7 @@ function OnboardingInner() {
                 {step === 1
                   ? "Upload your resume to continue"
                   : step === 6
-                    ? voice.trim().split(/\s+/).filter(Boolean).length < 30
-                      ? "Write at least 30 words to continue"
-                      : "That doesn't read like writing — rewrite in your own words"
+                    ? "Write at least 30 words to continue"
                     : "Fill in the required fields to continue"}
               </span>
             )}
@@ -397,9 +421,13 @@ function StepHeader({ eyebrow, title, body }: { eyebrow: string; title: string; 
 function OnbResume({
   parsed,
   onParsed,
+  about,
+  setAbout,
 }: {
   parsed: ParsedResume | null;
   onParsed: (p: ParsedResume | null) => void;
+  about: AboutForm;
+  setAbout: React.Dispatch<React.SetStateAction<AboutForm>>;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -544,7 +572,47 @@ function OnbResume({
           )}
 
           {loading && <SectionsSkeleton />}
-          {parsed && <SectionsGrid parsed={parsed} />}
+          {parsed && (
+            <>
+              <Card className="mt-5 p-4">
+                <SectionLabel className="mb-2">Confirm your name</SectionLabel>
+                <p className="text-[12.5px] text-mute mb-3">
+                  We auto-split your full name. Fix anything that looks off — these go straight
+                  into application forms.
+                </p>
+                <div className="grid grid-cols-3 gap-3">
+                  <Field label="First name">
+                    <Input
+                      value={about.firstName}
+                      onChange={(e) =>
+                        setAbout((p) => ({ ...p, firstName: e.target.value }))
+                      }
+                      placeholder="First"
+                    />
+                  </Field>
+                  <Field label="Last name">
+                    <Input
+                      value={about.lastName}
+                      onChange={(e) =>
+                        setAbout((p) => ({ ...p, lastName: e.target.value }))
+                      }
+                      placeholder="Last"
+                    />
+                  </Field>
+                  <Field label="Preferred name" hint="What people call you day-to-day.">
+                    <Input
+                      value={about.preferredName}
+                      onChange={(e) =>
+                        setAbout((p) => ({ ...p, preferredName: e.target.value }))
+                      }
+                      placeholder="e.g. Shafay"
+                    />
+                  </Field>
+                </div>
+              </Card>
+              <SectionsGrid parsed={parsed} />
+            </>
+          )}
         </>
       )}
     </div>
@@ -1019,10 +1087,14 @@ function OnbExperience({
   parsed,
   yoe,
   setYoe,
+  yoeAfterGrad,
+  setYoeAfterGrad,
 }: {
   parsed: ParsedResume | null;
   yoe: string;
   setYoe: (v: string) => void;
+  yoeAfterGrad: string;
+  setYoeAfterGrad: (v: string) => void;
 }) {
   // Build the initial skills list from the parsed resume. If the resume parse
   // didn't return any skills, start empty and let the user add manually.
@@ -1061,9 +1133,9 @@ function OnbExperience({
       />
 
       <SectionLabel className="mb-2">Total full-time work experience</SectionLabel>
-      <Card className="p-4 mb-8">
+      <Card className="p-4 mb-5">
         <p className="text-[12.5px] text-mute mb-3">
-          We use this to answer "How many years of experience do you have?" on application forms.
+          For when a form asks "How many years of experience do you have?"
         </p>
         <div className="flex flex-wrap gap-2">
           {YOE_BUCKETS.map((bucket) => {
@@ -1073,6 +1145,33 @@ function OnbExperience({
                 key={bucket}
                 type="button"
                 onClick={() => setYoe(bucket)}
+                className={`px-3 py-1.5 rounded-ctrl text-[13px] border transition-colors ${
+                  selected
+                    ? "border-ink/70 bg-[#EDE7D6] text-ink font-semibold"
+                    : "border-line bg-white text-ink hover:border-ink/30"
+                }`}
+              >
+                {bucket}
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      <SectionLabel className="mb-2">Years of experience after graduation</SectionLabel>
+      <Card className="p-4 mb-8">
+        <p className="text-[12.5px] text-mute mb-3">
+          A different bucket — many forms ask this specifically (excludes internships and pre-grad
+          work). Airtable, Stripe, others. Set this even if it overlaps your total above.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {YOE_BUCKETS.map((bucket) => {
+            const selected = yoeAfterGrad === bucket;
+            return (
+              <button
+                key={`grad-${bucket}`}
+                type="button"
+                onClick={() => setYoeAfterGrad(bucket)}
                 className={`px-3 py-1.5 rounded-ctrl text-[13px] border transition-colors ${
                   selected
                     ? "border-ink/70 bg-[#EDE7D6] text-ink font-semibold"
@@ -1248,6 +1347,34 @@ function OnbPreferences({
               onClick={() => setPrefs((p) => ({ ...p, futureSponsorship: "yes" }))}
             >
               Yes, eventually
+            </PrefPill>
+          </div>
+        </div>
+
+        <div>
+          <SectionLabel className="mb-3">Willing to relocate?</SectionLabel>
+          <p className="text-[12.5px] text-mute mb-3">
+            Forms commonly ask "are you willing to relocate?" — independent of remote/hybrid
+            preference.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <PrefPill
+              active={prefs.willingToRelocate === "no"}
+              onClick={() => setPrefs((p) => ({ ...p, willingToRelocate: "no" }))}
+            >
+              No
+            </PrefPill>
+            <PrefPill
+              active={prefs.willingToRelocate === "within_country"}
+              onClick={() => setPrefs((p) => ({ ...p, willingToRelocate: "within_country" }))}
+            >
+              Yes, within my country
+            </PrefPill>
+            <PrefPill
+              active={prefs.willingToRelocate === "anywhere"}
+              onClick={() => setPrefs((p) => ({ ...p, willingToRelocate: "anywhere" }))}
+            >
+              Yes, anywhere
             </PrefPill>
           </div>
         </div>

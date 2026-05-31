@@ -82,6 +82,8 @@ RULES:
 7. For file upload fields (type=file, file_resume, or file_cover_letter): always skip with reason "extension handles file uploads separately". The extension uploads the resume PDF and fills the cover letter via the form's 'Enter manually' link AFTER your answers apply — do not try to fill these via text.
 8. For "How did you hear about us?" type fields: if the profile has no source, pick "LinkedIn" if it's an option, otherwise skip.
 8a. For "Who is your current employer?" / "Current company" / similar: use profile.currentEmployer (we derive it from the resume's most recent 'Present' experience; if the candidate has no current job, the field will be "N/A" — use that literal string, do not skip).
+8b. For "Years of experience after graduation" or "Post-graduation experience" questions, use profile.yearsExperienceAfterGraduation (distinct from total experience). For generic "Years of experience" questions, use totalYearsExperience.
+8c. For "Are you willing to relocate?" questions, use profile.willingToRelocate ("no" / "within_country" / "anywhere") — map to the form's option text: "no" → "No", "within_country" → "Yes, within my country" (or whichever in-country phrasing exists), "anywhere" → "Yes" / "Yes, anywhere".
 9. INTERVIEW-STYLE QUESTIONS — answer them. Questions like "How are you using AI today in your current role?", "Describe a project you're proud of", "What excites you about X?", "Tell us about a recent technical challenge" are NOT reasons to abstain. The candidate's profile includes a RESUME SECTIONS block with their experience, projects, skills, summary, and education — use it. Write 3-5 substantive sentences naming SPECIFIC technologies, projects, and outcomes from the resume sections. NO filler ("I am passionate about..."), NO unverifiable claims, NO hallucinating projects that aren't on the resume. If asked about AI specifically and the resume mentions specific AI work (LLMs, RAG, fine-tuning, AI products like PurpleHire, generative models), lean into those by name.
 10. Only abstain when the answer requires the candidate to take a stance the profile genuinely doesn't reveal (e.g., "What's your salary expectation?" with no salary data; specific dates the profile doesn't mention; legally sensitive opinion).
 11. Output ONE JSON object: { answers: [...] }. No prose around it.`;
@@ -166,6 +168,11 @@ export async function POST(req: Request) {
 
     const p = row.profileRow;
     const { first, last } = splitName(p.fullName ?? "");
+    // Prefer the user's explicit fields when set; fall back to the
+    // split from fullName for legacy profiles.
+    const firstNameValue = p.firstName?.trim() || first;
+    const lastNameValue = p.lastName?.trim() || last;
+    const preferredNameValue = p.preferredName?.trim() || firstNameValue;
 
     // Derive the candidate's current employer from the resume's
     // experience rows. Rule: pick the experience whose endDate looks
@@ -182,9 +189,9 @@ export async function POST(req: Request) {
     const currentTitle = currentExperience?.title?.trim() || null;
 
     const slimProfile = {
-      firstName: first,
-      lastName: last,
-      preferredName: p.preferredName,
+      firstName: firstNameValue,
+      lastName: lastNameValue,
+      preferredName: preferredNameValue,
       email: user.email,
       phone: p.phone,
       location: p.location,
@@ -206,6 +213,8 @@ export async function POST(req: Request) {
       currentJobTitle: p.currentJobTitle || currentTitle,
       currentEmployer, // explicit field for "Who is your current employer?" prompts
       totalYearsExperience: p.totalYearsExperience,
+      yearsExperienceAfterGraduation: p.yearsExperienceAfterGraduation,
+      willingToRelocate: p.willingToRelocate,
       coverLetter: row.appCoverLetter ?? null,
     };
 
