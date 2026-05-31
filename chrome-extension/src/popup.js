@@ -130,9 +130,30 @@ async function runVisionFill({ dryRun }) {
   let viewportWidth = null;
   let viewportHeight = null;
   if (!dryRun) {
-    // For real runs we still need the background to capture the tab
-    // (popup context can't see the underlying page). But this is fast
-    // (<200ms), well within message-port lifetime.
+    // First, scroll the form into view in the active tab. captureVisibleTab
+    // grabs whatever's currently in viewport, so if the user scrolled past
+    // the form (or popped the popup before the page fully painted), Claude
+    // would see a near-blank screenshot and return a tiny plan. Scrolling
+    // the first form input to the top guarantees the form is in frame.
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: cachedTabId },
+        func: () => {
+          const sel =
+            "input[name='first_name'], input[autocomplete='given-name'], " +
+            "input[type='email'], form input:not([type='hidden']), form textarea";
+          const firstInput = document.querySelector(sel);
+          if (firstInput) {
+            firstInput.scrollIntoView({ behavior: "instant", block: "start" });
+            window.scrollBy(0, -80); // leave the section heading visible above
+          }
+        },
+      });
+      await new Promise((r) => setTimeout(r, 250));
+    } catch {
+      // best-effort scroll, don't block the capture
+    }
+
     const ssResp = await send({ type: "CAPTURE_TAB" });
     if (!ssResp?.ok) {
       setError(ssResp?.body?.error ?? "Couldn't capture the page screenshot.");
@@ -141,6 +162,9 @@ async function runVisionFill({ dryRun }) {
     screenshotBase64 = ssResp.body.screenshot;
     viewportWidth = ssResp.body.viewportWidth;
     viewportHeight = ssResp.body.viewportHeight;
+    console.log(
+      `[Onbehalf] captured viewport ${viewportWidth}x${viewportHeight} (dpr=${ssResp.body.dpr ?? "?"}), screenshot bytes=${screenshotBase64?.length ?? 0}`,
+    );
   }
 
   const path = dryRun
@@ -178,6 +202,7 @@ async function runVisionFill({ dryRun }) {
   const plan = planData.plan;
   const cost = planData.tokenCost ?? 0;
 
+  console.log(`[Onbehalf] plan returned (${plan.length} actions, cost $${cost.toFixed(4)}):`, plan);
   setLoadingText(`Plan received (${plan.length} actions). Executing…`);
   const tab = { id: cachedTabId };
   const execResp = await tellTab(tab, { type: "EXECUTE_PLAN", plan });
