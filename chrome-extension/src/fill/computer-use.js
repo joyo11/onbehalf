@@ -75,9 +75,16 @@
   }
 
   async function doType(el, value) {
-    el.scrollIntoView({ behavior: "instant", block: "center" });
-    el.focus();
-    await sleep(50);
+    // DO NOT scrollIntoView here. Claude returned a coordinate based
+    // on the screenshot's viewport — if we scroll, every subsequent
+    // action's coordinate maps to the wrong element. The field is
+    // already in the viewport (Claude wouldn't have seen it otherwise).
+    try {
+      el.focus();
+    } catch {
+      /* not focusable — surface.fill still works for some surfaces */
+    }
+    await sleep(30);
     await surface.fill(el, value);
   }
 
@@ -102,12 +109,13 @@
 
     // React-Select: click to open, find option element, click it.
     // Need to click the CONTROL not necessarily what elementFromPoint
-    // returned (which could be a child of the control).
+    // returned (which could be a child of the control). Do NOT
+    // scrollIntoView — same reasoning as doType (would shift the
+    // viewport for subsequent actions).
     const control =
       el.closest?.("[class*='select__control' i], [class*='Select__control' i]") ?? el;
-    control.scrollIntoView({ behavior: "instant", block: "center" });
     control.click();
-    await sleep(350); // wait for menu portal to mount
+    await sleep(400); // wait for menu portal to mount
 
     // Find option whose visible text matches target. Look across the
     // whole document because React-Select portals the menu to body.
@@ -216,8 +224,20 @@
   }
 
   async function executePlan(plan) {
+    // Snapshot the scroll position at plan start. Claude's coordinates
+    // are viewport-relative to this scroll position. If anything
+    // (focus event, React-Select menu, validation banner) shifts the
+    // viewport between actions, we restore the original scroll so
+    // every elementFromPoint hit is on the geometry Claude analyzed.
+    const baseScrollX = window.scrollX;
+    const baseScrollY = window.scrollY;
+
     const results = [];
     for (const action of plan) {
+      if (window.scrollX !== baseScrollX || window.scrollY !== baseScrollY) {
+        window.scrollTo(baseScrollX, baseScrollY);
+        await sleep(50);
+      }
       const r = await executeAction(action);
       results.push(r);
       await sleep(120);
