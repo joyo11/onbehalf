@@ -280,7 +280,7 @@ function OnboardingInner() {
             )}
             <Button
               onClick={next}
-              variant="primary"
+              variant="ghost"
               disabled={!canContinue || finishing}
               loading={finishing}
               trailing={!finishing && <Icon name="arrow-right" size={14} />}
