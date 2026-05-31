@@ -487,13 +487,12 @@ function TrackerTable({
               <th className="px-2 py-2.5 font-medium">CL</th>
               <th className="px-2 py-2.5 font-medium">Resume</th>
               <th className="px-2 py-2.5 font-medium">Status</th>
-              <th className="px-2 py-2.5 font-medium">Confirmation</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10}>
+                <td colSpan={9}>
                   <EmptyResults />
                 </td>
               </tr>
@@ -547,16 +546,6 @@ function TrackerTable({
                   </td>
                   <td className="px-2 py-2.5">
                     <StatusPill status={r.status} />
-                  </td>
-                  <td className="px-2 py-2.5 text-[12.5px]">
-                    {r.confirmation ? (
-                      <span className="inline-flex items-center gap-1 text-ok">
-                        <Icon name="check" size={13} />
-                        <span className="tabular">{r.confirmation}</span>
-                      </span>
-                    ) : (
-                      <span className="text-ink-faint">—</span>
-                    )}
                   </td>
                 </tr>
               );

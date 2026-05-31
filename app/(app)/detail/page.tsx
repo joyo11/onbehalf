@@ -70,7 +70,6 @@ function DetailInner() {
   const [confetti, setConfetti] = useState(false);
   const [approving, setApproving] = useState(false);
   const [approveError, setApproveError] = useState<string | null>(null);
-  const submitFiredRef = useRef(false);
   const confettiFiredRef = useRef(false);
 
   async function onApproveSubmit() {
@@ -99,14 +98,8 @@ function DetailInner() {
       setError("No application selected.");
       return;
     }
-    if (!submitFiredRef.current) {
-      submitFiredRef.current = true;
-      fetch("/api/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ applicationId: id }),
-      }).catch(() => {});
-    }
+    // No more auto-fire of /api/submit on mount — the user explicitly
+    // clicks Tailor, then Apply, then submits from the extension.
     let cancelled = false;
     async function tick() {
       try {
@@ -160,13 +153,6 @@ function DetailInner() {
 
   if (!data) return <DetailSkeleton />;
 
-  const liveViewUrl = (
-    data.events.find((e) => e.step === "session_started")?.payload as
-      | { liveViewUrl?: string }
-      | null
-      | undefined
-  )?.liveViewUrl;
-
   const showThanks = data.application.status === "submitted" || data.application.status === "confirmed";
   const step = mapStatusToStep(data.application.status);
   const brand = brandFor(data.job.company);
@@ -217,89 +203,18 @@ function DetailInner() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_350px] gap-6 items-start">
-        {/* LEFT: live browser session view */}
+        {/* LEFT: staged tailor → apply card */}
         <div className="relative">
           <ConfettiBurst fire={confetti} />
-
-          <div className="rounded-xl3 overflow-hidden border border-sand-200 ob-card-shadow-lg bg-white">
-            {/* browser chrome */}
-            <div className="flex items-center gap-3 px-4 h-11 bg-[#2A2A2A]">
-              <div className="flex gap-1.5">
-                <span className="h-3 w-3 rounded-full bg-[#FF5F57]" />
-                <span className="h-3 w-3 rounded-full bg-[#FEBC2E]" />
-                <span className="h-3 w-3 rounded-full bg-[#28C840]" />
-              </div>
-              <div className="flex-1 mx-2 h-6 rounded-md bg-[#3D3D3D] flex items-center px-3 gap-2">
-                <Ic.shield className="h-3 w-3 text-slate-400" />
-                <span className="font-mono text-[11px] text-slate-300 truncate">
-                  {data.job.applyUrl}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 rounded-full bg-teal-500/20 px-2.5 py-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-teal-400 ob-blink" />
-                <span className="text-[10px] font-bold text-teal-300 tracking-wide">BROWSERBASE</span>
-              </div>
-            </div>
-
-            {/* live view embed area */}
-            <div className="relative bg-[#F7F8FA] p-6 h-[300px] sm:h-[420px] flex flex-col items-center justify-center text-center">
-              {liveViewUrl ? (
-                <>
-                  <div className="h-14 w-14 rounded-full bg-teal-50 border-2 border-teal-200 grid place-items-center mb-4">
-                    <Ic.eye className="h-7 w-7 text-teal-600" />
-                  </div>
-                  <p className="font-display font-bold text-ink text-[19px] mb-2">
-                    Live browser session is up
-                  </p>
-                  <p className="text-[14px] text-ink-mute max-w-[40ch] mb-5 leading-relaxed">
-                    Watch the agent fill the application form in real time. The link below is a
-                    full-screen Browserbase inspector.
-                  </p>
-                  <a
-                    href={liveViewUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 rounded-full bg-ink hover:bg-ink-soft text-white text-[14px] font-semibold px-5 py-2.5 transition-colors"
-                  >
-                    Open live view <Ic.ext className="h-4 w-4" />
-                  </a>
-                </>
-              ) : (
-                <>
-                  <div className="h-12 w-12 rounded-full border-2 border-teal-200 border-t-teal-500 animate-spin mb-4" />
-                  <p className="text-[15px] font-medium text-ink-mute">
-                    {step === 0 ? "Opening the application…" : "Tailoring your resume first…"}
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 flex items-center justify-between rounded-xl3 bg-white border border-sand-200 ob-card-shadow px-5 py-3.5">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl2 bg-teal-50 border border-teal-100 grid place-items-center">
-                <Ic.eye className="h-[18px] w-[18px] text-teal-600" />
-              </div>
-              <div>
-                <p className="text-[14px] font-semibold text-ink">Live browser session</p>
-                <p className="text-[12px] text-ink-faint">
-                  Powered by Browserbase · watch every keystroke
-                </p>
-              </div>
-            </div>
-            {liveViewUrl ? (
-              <a
-                href={liveViewUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="shrink-0 inline-flex items-center gap-2 rounded-full bg-ink hover:bg-ink-soft text-white text-[13px] font-semibold px-4 py-2 whitespace-nowrap transition-colors"
-              >
-                Open live view <Ic.ext className="h-3.5 w-3.5" />
-              </a>
-            ) : (
-              <span className="text-[12px] text-ink-faint">Waiting for session…</span>
-            )}
-          </div>
+          <StagedActionCard
+            applicationId={data.application.id}
+            jobId={data.job.id}
+            jobApplyUrl={data.job.applyUrl}
+            jobCompany={data.job.company}
+            status={data.application.status}
+            tailoringSummary={data.application.tailoringSummary}
+            coverLetterText={data.application.coverLetterText}
+          />
         </div>
 
         {/* RIGHT: progress + payoff */}
@@ -360,18 +275,214 @@ function DetailInner() {
             </div>
           )}
 
-          {data.application.tailoringSummary && (
-            <div className="bg-white rounded-xl3 border border-sand-200 ob-card-shadow p-6">
-              <Eyebrow tone="teal" className="mb-3">
-                What I tailored
-              </Eyebrow>
-              <p className="text-[13px] text-ink-soft leading-relaxed">
-                {data.application.tailoringSummary}
-              </p>
-            </div>
-          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Staged primary action card on the detail page. Replaces the old
+ * Browserbase live-session embed — we don't run a remote browser
+ * anymore; the user runs the extension in their own browser instead.
+ *
+ * States, mapped to application.status:
+ *   queued + no tailoringSummary   → "Tailor my resume" CTA
+ *   tailoring                       → spinner + status copy
+ *   queued + tailoringSummary       → preview tailoring + "Apply now"
+ *   submitting                      → "Form opened — fill it from your toolbar"
+ *   submitted / confirmed           → success card is rendered in the
+ *                                     right column; we render nothing
+ *                                     so the layout collapses cleanly.
+ */
+function StagedActionCard({
+  applicationId,
+  jobId,
+  jobApplyUrl,
+  jobCompany,
+  status,
+  tailoringSummary,
+  coverLetterText,
+}: {
+  applicationId: string;
+  jobId: string;
+  jobApplyUrl: string;
+  jobCompany: string;
+  status: Status;
+  tailoringSummary: string;
+  coverLetterText: string | null;
+}) {
+  const [tailoring, setTailoring] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function patch(body: Record<string, unknown>) {
+    await fetch(`/api/applications/${applicationId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function runTailor() {
+    setTailoring(true);
+    setErr(null);
+    try {
+      await patch({ status: "tailoring" });
+      const res = await fetch("/api/tailor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        tailoringSummary?: string;
+        coverLetter?: { text?: string };
+      };
+      if (!res.ok) {
+        setErr(json.error ?? `Tailor failed (${res.status})`);
+        await patch({ status: "queued" });
+        return;
+      }
+      await patch({
+        status: "queued",
+        tailoringSummary: json.tailoringSummary ?? "",
+        coverLetterText: json.coverLetter?.text ?? "",
+      });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Network error");
+      await patch({ status: "queued" });
+    } finally {
+      setTailoring(false);
+    }
+  }
+
+  async function openApply() {
+    setOpening(true);
+    try {
+      await patch({ status: "submitting" });
+      window.open(jobApplyUrl, "_blank", "noopener,noreferrer");
+    } finally {
+      setOpening(false);
+    }
+  }
+
+  // Submitted / confirmed → success sticker on the right column carries
+  // the moment. This card disappears.
+  if (status === "submitted" || status === "confirmed") return null;
+
+  if (status === "tailoring" || tailoring) {
+    return (
+      <div className="rounded-xl3 bg-white border border-sand-200 ob-card-shadow p-8 text-center">
+        <div className="h-12 w-12 mx-auto mb-4 rounded-full border-2 border-teal-200 border-t-teal-500 animate-spin" />
+        <p className="font-display font-bold text-ink text-[18px]">
+          Rewriting your resume in your voice…
+        </p>
+        <p className="text-[13px] text-ink-mute mt-2 max-w-[44ch] mx-auto leading-relaxed">
+          Claude is reading the job description and tailoring bullets to match what they're
+          actually looking for. ~30 seconds.
+        </p>
+      </div>
+    );
+  }
+
+  if (status === "submitting") {
+    return (
+      <div className="rounded-xl3 bg-white border border-sand-200 ob-card-shadow p-8 text-center">
+        <div className="h-12 w-12 mx-auto mb-4 rounded-full bg-teal-50 border-2 border-teal-200 grid place-items-center">
+          <Ic.ext className="h-6 w-6 text-teal-600" />
+        </div>
+        <p className="font-display font-bold text-ink text-[18px]">Application open in a new tab.</p>
+        <p className="text-[13px] text-ink-mute mt-2 max-w-[48ch] mx-auto leading-relaxed">
+          Switch over and click the Onbehalf "O" in your toolbar — it'll auto-fill the form. Submit
+          when you're ready; we'll mark this row submitted automatically.
+        </p>
+        <a
+          href={jobApplyUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-5 inline-flex items-center gap-2 rounded-full bg-ink hover:bg-ink-soft text-white text-[13px] font-semibold px-5 py-2.5 transition-colors"
+        >
+          Reopen the form <Ic.ext className="h-4 w-4" />
+        </a>
+      </div>
+    );
+  }
+
+  // Queued: either no tailoring yet (CTA), or tailoring done (preview + apply)
+  if (!tailoringSummary) {
+    return (
+      <div className="rounded-xl3 bg-white border border-sand-200 ob-card-shadow p-8">
+        <Eyebrow tone="teal" className="mb-2">
+          Step 1 — tailor
+        </Eyebrow>
+        <p className="font-display font-bold text-ink text-[22px] leading-tight tracking-[-0.012em]">
+          Rewrite your resume for {jobCompany}.
+        </p>
+        <p className="text-[13.5px] text-ink-mute mt-3 max-w-[56ch] leading-relaxed">
+          I'll match the bullets you wrote to the language in this JD — same facts, sharper
+          framing. No invented experience.
+        </p>
+        <button
+          onClick={runTailor}
+          disabled={tailoring}
+          className="mt-6 inline-flex items-center gap-2 rounded-full bg-ink hover:bg-ink-soft text-white text-[14px] font-semibold px-6 py-3 transition-colors disabled:opacity-60"
+        >
+          {tailoring ? "Tailoring…" : "Tailor my resume"}
+        </button>
+        {err && (
+          <p className="text-[12.5px] text-error mt-3">{err}</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl3 bg-white border border-sand-200 ob-card-shadow p-8">
+      <Eyebrow tone="teal" className="mb-2">
+        Step 2 — review and apply
+      </Eyebrow>
+      <p className="font-display font-bold text-ink text-[20px] leading-tight tracking-[-0.01em]">
+        Resume tailored for {jobCompany}. Take a look.
+      </p>
+
+      <div className="mt-5">
+        <p className="text-[11px] uppercase tracking-[0.06em] font-semibold text-ink-mute mb-2">
+          What I changed
+        </p>
+        <p className="text-[13.5px] text-ink-soft leading-[1.65] whitespace-pre-wrap">
+          {tailoringSummary}
+        </p>
+      </div>
+
+      {coverLetterText && (
+        <div className="mt-6">
+          <p className="text-[11px] uppercase tracking-[0.06em] font-semibold text-ink-mute mb-2">
+            Cover letter draft
+          </p>
+          <p className="text-[13px] text-ink-soft leading-[1.65] whitespace-pre-wrap line-clamp-12">
+            {coverLetterText}
+          </p>
+        </div>
+      )}
+
+      <div className="mt-7 flex items-center gap-3 flex-wrap">
+        <button
+          onClick={openApply}
+          disabled={opening}
+          className="inline-flex items-center gap-2 rounded-full bg-ink hover:bg-ink-soft text-white text-[14px] font-semibold px-6 py-3 transition-colors disabled:opacity-60"
+        >
+          {opening ? "Opening…" : "Apply now"} <Ic.ext className="h-4 w-4" />
+        </button>
+        <button
+          onClick={runTailor}
+          disabled={tailoring}
+          className="text-[13px] text-ink-mute hover:text-ink underline underline-offset-2 decoration-[1px] disabled:opacity-60"
+        >
+          Re-tailor
+        </button>
+      </div>
+      {err && <p className="text-[12.5px] text-error mt-3">{err}</p>}
     </div>
   );
 }

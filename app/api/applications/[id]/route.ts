@@ -54,6 +54,60 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 /**
+ * Patch a subset of fields on an application. Used by the detail
+ * page to transition through queued → tailoring → submitting →
+ * submitted as the user clicks Tailor / Apply. Accepted fields:
+ *   - status (one of the application_status enum values)
+ *   - tailoringSummary
+ *   - coverLetterText
+ */
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+
+  const { id } = await params;
+  type PatchBody = {
+    status?:
+      | "queued"
+      | "tailoring"
+      | "submitting"
+      | "submitted"
+      | "confirmed"
+      | "needsHuman"
+      | "awaitingCode"
+      | "failed"
+      | "draft"
+      | "pending";
+    tailoringSummary?: string;
+    coverLetterText?: string;
+  };
+  const body = (await req.json().catch(() => null)) as PatchBody | null;
+  if (!body) return NextResponse.json({ error: "Body must be JSON." }, { status: 400 });
+
+  const updates: Partial<typeof application.$inferInsert> = {};
+  if (typeof body.status === "string") updates.status = body.status;
+  if (typeof body.tailoringSummary === "string") updates.tailoringSummary = body.tailoringSummary;
+  if (typeof body.coverLetterText === "string") updates.coverLetterText = body.coverLetterText;
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "No editable fields supplied." }, { status: 400 });
+  }
+  if (body.status === "submitted") {
+    updates.submittedAt = new Date();
+  }
+
+  const updated = await db
+    .update(application)
+    .set(updates)
+    .where(and(eq(application.id, id), eq(application.userId, user.id)))
+    .returning({ id: application.id, status: application.status });
+
+  if (updated.length === 0) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true, application: updated[0] });
+}
+
+/**
  * Delete an application. Hard delete — the schema cascades to
  * applicationEvent (lib/db/schema.ts line 271). Ownership-checked so
  * a user can't remove someone else's row.
