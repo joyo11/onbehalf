@@ -22,6 +22,8 @@ type AboutPayload = {
 
 type PrefsPayload = {
   workAuth: "us_citizen_pr" | "needs_sponsorship" | "other" | "";
+  workAuthOther?: string;
+  futureSponsorship?: "yes" | "no" | "";
   workPreference: { remote: boolean; hybrid: boolean; onsite: boolean };
   salaryMin: number; // thousands
   earliestStartDate: string; // YYYY-MM-DD
@@ -77,8 +79,13 @@ export async function POST(req: Request) {
       githubUrl: about.github || existing.githubUrl,
       portfolioUrl: about.site || existing.portfolioUrl,
       targetRoleTitles: roles,
-      workAuthorization: prefs.workAuth || existing.workAuthorization,
-      needsSponsorship: prefs.workAuth === "needs_sponsorship" ? true : false,
+      workAuthorization:
+        prefs.workAuth === "other" && prefs.workAuthOther
+          ? `other: ${prefs.workAuthOther.trim()}`
+          : prefs.workAuth || existing.workAuthorization,
+      needsSponsorship:
+        prefs.futureSponsorship === "yes" ||
+        prefs.workAuth === "needs_sponsorship",
       openToRemote: prefs.workPreference.remote,
       openToHybrid: prefs.workPreference.hybrid,
       openToOnsite: prefs.workPreference.onsite,

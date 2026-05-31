@@ -78,7 +78,10 @@ export default function GoClient({ summary }: { summary: GoSummary }) {
 
       <div className="mt-8 grid grid-cols-2 gap-5">
         <Card className="p-5">
-          <SectionLabel className="mb-3">Identity</SectionLabel>
+          <div className="flex items-center justify-between mb-3">
+            <SectionLabel>Identity</SectionLabel>
+            <EditLink href="/onboarding" />
+          </div>
           <Row label="Name" value={summary.name} />
           <Row label="Email" value={summary.email} />
           {summary.phone && <Row label="Phone" value={summary.phone} />}
@@ -89,7 +92,10 @@ export default function GoClient({ summary }: { summary: GoSummary }) {
         </Card>
 
         <Card className="p-5">
-          <SectionLabel className="mb-3">Resume on file</SectionLabel>
+          <div className="flex items-center justify-between mb-3">
+            <SectionLabel>Resume on file</SectionLabel>
+            <EditLink href="/onboarding" />
+          </div>
           <div className="flex items-center gap-3">
             <div
               className="w-10 h-12 rounded-sm flex items-center justify-center"
@@ -127,7 +133,10 @@ export default function GoClient({ summary }: { summary: GoSummary }) {
         </Card>
 
         <Card className="p-5">
-          <SectionLabel className="mb-3">Search target</SectionLabel>
+          <div className="flex items-center justify-between mb-3">
+            <SectionLabel>Search target</SectionLabel>
+            <EditLink href="/onboarding" />
+          </div>
           {summary.targetRoles.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {summary.targetRoles.map((r) => (
@@ -150,7 +159,10 @@ export default function GoClient({ summary }: { summary: GoSummary }) {
         </Card>
 
         <Card className="p-5">
-          <SectionLabel className="mb-3">Voice (used in cover letters)</SectionLabel>
+          <div className="flex items-center justify-between mb-3">
+            <SectionLabel>Voice (used in cover letters)</SectionLabel>
+            <EditLink href="/onboarding" />
+          </div>
           {summary.voiceSample ? (
             <p className="text-[13px] text-ink/85 lh-body line-clamp-6">{summary.voiceSample}</p>
           ) : (
@@ -202,31 +214,51 @@ export default function GoClient({ summary }: { summary: GoSummary }) {
           </div>
         </label>
 
-        <div className="mt-6 flex items-center justify-between">
-          <div className="text-[12.5px] text-mute lh-body max-w-md">
-            I&apos;ll find the {batchSize} jobs that best match your resume
-            {tailorPerRole ? ", tailor each one," : ""} and submit them on your behalf. You can
-            watch live in the tracker.
-          </div>
-          {error && (
-            <div className="text-[12.5px] text-error flex items-center gap-1.5">
-              <Icon name="alert-circle" size={13} /> {error}
-            </div>
-          )}
-          <Button
-            size="lg"
-            variant="primary"
-            onClick={start}
-            disabled={starting}
-            loading={starting}
-            trailing={!starting && <Icon name="paper-plane" size={14} />}
-          >
-            {starting ? "Starting…" : `Start applying to ${batchSize}`}
-          </Button>
+        <div className="mt-6 text-[12.5px] text-mute lh-body max-w-md">
+          I&apos;ll find the {batchSize} jobs that best match your resume
+          {tailorPerRole ? ", tailor each one," : ""} and submit them on your behalf. You can
+          watch live in the tracker.
         </div>
       </Card>
 
+      {/* Sticky Confirm bar — always visible at the bottom of the viewport */}
+      <div className="sticky bottom-0 -mx-10 mt-8 border-t border-line bg-paper shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.08)] z-30">
+        <div className="max-w-[1000px] mx-auto px-10 py-4 flex items-center justify-between gap-4">
+          <div className="text-[12.5px] text-mute">
+            Looks right? Confirm to start applying to {batchSize}.
+          </div>
+          <div className="flex items-center gap-3">
+            {error && (
+              <div className="text-[12.5px] text-error flex items-center gap-1.5">
+                <Icon name="alert-circle" size={13} /> {error}
+              </div>
+            )}
+            <Button
+              size="lg"
+              variant="primary"
+              onClick={start}
+              disabled={starting}
+              loading={starting}
+              trailing={!starting && <Icon name="paper-plane" size={14} />}
+            >
+              {starting ? "Starting…" : `Confirm and start`}
+            </Button>
+          </div>
+        </div>
+      </div>
+
     </div>
+  );
+}
+
+function EditLink({ href }: { href: string }) {
+  return (
+    <a
+      href={href}
+      className="text-[12px] text-mute hover:text-ink underline-offset-[3px] decoration-[1px] hover:underline focus-ring rounded-ctrl"
+    >
+      Edit
+    </a>
   );
 }
 

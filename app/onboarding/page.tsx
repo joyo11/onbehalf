@@ -20,8 +20,67 @@ import {
 import { COUNTRIES, US_STATES, guessCountryStateFrom } from "@/lib/locations";
 import type { ParsedResume, SkillYear } from "@/lib/types";
 
+// All IANA time zones (resolved at module load). Browser + Node 18+
+// both support Intl.supportedValuesOf — falls back to a tiny shortlist
+// only if the runtime is too old.
+const TIMEZONES: string[] = (() => {
+  try {
+    const f = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] })
+      .supportedValuesOf;
+    if (f) return f("timeZone");
+  } catch {
+    /* fall through */
+  }
+  return [
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Los_Angeles",
+    "America/Anchorage",
+    "Pacific/Honolulu",
+    "Europe/London",
+    "Europe/Paris",
+    "Europe/Berlin",
+    "Asia/Dubai",
+    "Asia/Kolkata",
+    "Asia/Singapore",
+    "Asia/Tokyo",
+    "Australia/Sydney",
+    "UTC",
+  ];
+})();
+
 function isValidLinkedIn(url: string): boolean {
   return url.trim().toLowerCase().includes("linkedin.com");
+}
+
+/**
+ * Quick heuristic for keyboard mash / pasted nonsense in the voice
+ * sample. Catches obvious garbage without blocking creative writing.
+ *
+ * Flags as gibberish when ANY of:
+ *   - any 5+ same chars in a row ("aaaaa", "kkkkk")
+ *   - any 6+ chars from the same keyboard row with no spaces
+ *     ("qwertyu", "asdfghj")
+ *   - average word length < 2 (lots of single letters separated by
+ *     spaces — "a s d f g h j")
+ *   - fewer than 6 unique word stems in a 30+ word sample
+ */
+function looksLikeGibberish(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  if (!t) return false;
+  if (/([a-z])\1{4,}/.test(t)) return true;
+  if (/[qwertyuiop]{6,}/.test(t)) return true;
+  if (/[asdfghjkl]{6,}/.test(t)) return true;
+  if (/[zxcvbnm]{6,}/.test(t)) return true;
+  const words = t.split(/\s+/).filter(Boolean);
+  if (words.length >= 10) {
+    const avgLen = words.reduce((n, w) => n + w.length, 0) / words.length;
+    if (avgLen < 2) return true;
+    const unique = new Set(words.map((w) => w.replace(/[^a-z]/g, "").slice(0, 4)));
+    if (unique.size < Math.max(6, words.length / 6)) return true;
+  }
+  return false;
 }
 
 function isValidGitHub(url: string): boolean {
@@ -79,6 +138,8 @@ export type AboutForm = {
 
 export type PrefsForm = {
   workAuth: "us_citizen_pr" | "needs_sponsorship" | "other" | "";
+  workAuthOther: string; // free text when workAuth === "other" (e.g. "OPT", "OPT STEM")
+  futureSponsorship: "yes" | "no" | ""; // separate from current auth — common form question
   workPreference: { remote: boolean; hybrid: boolean; onsite: boolean };
   salaryMin: number; // in thousands USD
   earliestStartDate: string; // YYYY-MM-DD or ""
@@ -87,8 +148,10 @@ export type PrefsForm = {
 
 const EMPTY_PREFS: PrefsForm = {
   workAuth: "",
+  workAuthOther: "",
+  futureSponsorship: "",
   workPreference: { remote: true, hybrid: true, onsite: false },
-  salaryMin: 170,
+  salaryMin: 50,
   earliestStartDate: "",
   locations: ["Remote (US)", "New York", "San Francisco"],
 };
@@ -189,13 +252,23 @@ function OnboardingInner() {
     if (step === 3) return roles.length >= 1;
     if (step === 5) {
       if (!prefs.workAuth) return false;
+      if (prefs.workAuth === "other" && prefs.workAuthOther.trim().length < 2) {
+        return false;
+      }
+      if (!prefs.futureSponsorship) return false;
       const wp = prefs.workPreference;
       if (!wp.remote && !wp.hybrid && !wp.onsite) return false;
       if (prefs.locations.length === 0) return false;
       if (!prefs.earliestStartDate) return false;
       return true;
     }
-    if (step === 6) return voice.trim().split(/\s+/).filter(Boolean).length >= 30;
+    if (step === 6) {
+      const txt = voice.trim();
+      const wordCount = txt.split(/\s+/).filter(Boolean).length;
+      if (wordCount < 30) return false;
+      if (looksLikeGibberish(txt)) return false;
+      return true;
+    }
     return true;
   })();
 
@@ -282,7 +355,9 @@ function OnboardingInner() {
                 {step === 1
                   ? "Upload your resume to continue"
                   : step === 6
-                    ? "Write at least 30 words to continue"
+                    ? voice.trim().split(/\s+/).filter(Boolean).length < 30
+                      ? "Write at least 30 words to continue"
+                      : "That doesn't read like writing — rewrite in your own words"
                     : "Fill in the required fields to continue"}
               </span>
             )}
@@ -689,12 +764,16 @@ function OnbAbout({
           />
         </Field>
         <Field label="Time zone">
-          <Input
-            value={form.timezone}
-            onChange={setText("timezone")}
-            placeholder="e.g. Pacific (UTC-8)"
-            required
-          />
+          <Select value={form.timezone} onChange={setSelect("timezone")} required>
+            <option value="" disabled>
+              Pick your time zone…
+            </option>
+            {TIMEZONES.map((tz) => (
+              <option key={tz} value={tz}>
+                {tz}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label="Country">
           <Select value={form.country} onChange={setSelect("country")} required>
@@ -913,9 +992,10 @@ function Segmented({
               onChange && onChange(o);
             }}
             className={`h-8 px-3 rounded-[4px] text-[12.5px] font-medium transition-colors ${
-              active ? "text-white" : "text-mute hover:text-ink"
+              active
+                ? "bg-[#EDE7D6] text-ink ring-1 ring-ink/70"
+                : "text-mute hover:text-ink"
             }`}
-            style={active ? { background: "var(--accent)" } : undefined}
           >
             {o}
           </button>
@@ -995,7 +1075,7 @@ function OnbExperience({
                 onClick={() => setYoe(bucket)}
                 className={`px-3 py-1.5 rounded-ctrl text-[13px] border transition-colors ${
                   selected
-                    ? "border-ink bg-ink text-paper"
+                    ? "border-ink/70 bg-[#EDE7D6] text-ink font-semibold"
                     : "border-line bg-white text-ink hover:border-ink/30"
                 }`}
               >
@@ -1057,29 +1137,16 @@ function OnbExperience({
 
 function SkillRow({
   skill,
-  onChange,
   onRemove,
 }: {
   skill: SkillYear;
   onChange: (s: SkillYear) => void;
   onRemove: () => void;
 }) {
-  const dec = () => onChange({ ...skill, years: Math.max(0, skill.years - 1) });
-  const inc = () => onChange({ ...skill, years: skill.years + 1 });
   return (
     <div className="flex items-center gap-4 px-4 py-3">
       <div className="flex-1">
         <div className="text-[14px] font-medium">{skill.skill}</div>
-        <div className="text-[12px] text-mute">{skill.level}</div>
-      </div>
-      <div className="flex items-center gap-1 border border-line rounded-sm bg-white">
-        <button onClick={dec} className="w-8 h-8 flex items-center justify-center text-mute hover:text-ink">
-          <Icon name="minus" size={13} />
-        </button>
-        <div className="w-12 text-center text-[13px] font-medium tabular-nums">{skill.years} yr</div>
-        <button onClick={inc} className="w-8 h-8 flex items-center justify-center text-mute hover:text-ink">
-          <Icon name="plus" size={13} />
-        </button>
       </div>
       <button
         onClick={onRemove}
@@ -1143,6 +1210,45 @@ function OnbPreferences({
                 {o.label}
               </PrefPill>
             ))}
+          </div>
+          {prefs.workAuth === "other" && (
+            <div className="mt-3">
+              <Input
+                value={prefs.workAuthOther}
+                onChange={(e) =>
+                  setPrefs((p) => ({ ...p, workAuthOther: e.target.value }))
+                }
+                placeholder="Describe — e.g. OPT, OPT STEM, TN visa, J-1 …"
+              />
+              <p className="text-[12px] text-mute mt-1.5">
+                We send this verbatim when an application asks "describe your work
+                authorization."
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <SectionLabel className="mb-3">
+            Will you require sponsorship in the future?
+          </SectionLabel>
+          <p className="text-[12.5px] text-mute mb-3">
+            Most forms ask this separately from current status. Even if you're authorized
+            now, some employers want to know about future visa needs.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <PrefPill
+              active={prefs.futureSponsorship === "no"}
+              onClick={() => setPrefs((p) => ({ ...p, futureSponsorship: "no" }))}
+            >
+              No
+            </PrefPill>
+            <PrefPill
+              active={prefs.futureSponsorship === "yes"}
+              onClick={() => setPrefs((p) => ({ ...p, futureSponsorship: "yes" }))}
+            >
+              Yes, eventually
+            </PrefPill>
           </div>
         </div>
 
