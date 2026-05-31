@@ -659,6 +659,81 @@
     mountHost();
     state = "ready";
     renderReady();
+    armSubmitWatcher();
+  }
+
+  /**
+   * Detect when the user clicks the page's native Submit button — even
+   * if they bypass our overlay's "Approve and submit" CTA. One-shot:
+   * once we fire, we don't re-fire (a form submit is final).
+   *
+   * We listen at two levels:
+   *   1. `submit` event on the document (capture phase) — catches
+   *      <form>-based submissions reliably across React/Vue/vanilla.
+   *   2. `click` on Submit-shaped buttons — catches forms that handle
+   *      submit via onClick instead of a real form element (some ATS
+   *      widgets do this).
+   *
+   * Either path → mark the application submitted and open /tracker.
+   */
+  function armSubmitWatcher() {
+    let fired = false;
+    const fire = () => {
+      if (fired) return;
+      fired = true;
+      // Disarm both listeners — we don't need them anymore.
+      document.removeEventListener("submit", onSubmit, true);
+      document.removeEventListener("click", onClick, true);
+      send({
+        type: "MARK_SUBMITTED_AND_OPEN_TRACKER",
+        applicationId: job.application.id,
+      });
+      // Update overlay to show submitted state (if still mounted)
+      if (shadow) {
+        const root = shadow.getElementById("onbehalf-root");
+        if (root) {
+          root.className = "card";
+          root.innerHTML = "";
+          root.appendChild(renderHeader(true));
+          root.appendChild(
+            el("div", { className: "summary-line" }, "Submitted. Opening tracker…"),
+          );
+        }
+      }
+    };
+
+    function onSubmit() {
+      fire();
+    }
+
+    function onClick(e) {
+      const t = e.target;
+      if (!t || !t.closest) return;
+      const btn = t.closest(
+        "button[type='submit'], input[type='submit'], button[aria-label*='submit' i]",
+      );
+      if (btn) {
+        fire();
+        return;
+      }
+      // Fallback: any button whose visible text is exactly "Submit" /
+      // "Submit application" / "Apply now" / "Send application".
+      const btnLike = t.closest("button, [role='button']");
+      if (!btnLike) return;
+      const txt = (btnLike.textContent || "").trim().toLowerCase();
+      if (
+        txt === "submit" ||
+        txt === "submit application" ||
+        txt === "apply now" ||
+        txt === "send application" ||
+        txt === "send"
+      ) {
+        fire();
+      }
+    }
+
+    document.addEventListener("submit", onSubmit, true);
+    document.addEventListener("click", onClick, true);
   }
 
   // Wait briefly so the page's React form gets a chance to mount before
