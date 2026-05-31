@@ -128,7 +128,7 @@ async function runAutoFill() {
   // greenhouse.js upload path. This is the one piece Shafay confirmed
   // works reliably. Done BEFORE the LLM walk so file inputs are
   // populated by the time we report the summary.
-  setLoadingText("Uploading resume + cover letter…");
+  setLoadingText("Loading…");
   const uploadResp = await tellTab(tab, {
     type: "UPLOAD_FILES",
     profile: {
@@ -142,9 +142,9 @@ async function runAutoFill() {
     console.warn("[Onbehalf] upload stage failed:", uploadResp?.error);
   }
 
-  setLoadingText("Reading the form…");
   // Stage 1: ask the content script to walk the form and return an
-  // inventory of every field.
+  // inventory of every field. (Loading text intentionally minimal —
+  // user just wants to see "Loading…" not stage-by-stage.)
   const walkResp = await tellTab(tab, { type: "WALK_FORM" });
   if (!walkResp?.ok) {
     setError(walkResp?.error ?? "Couldn't read the form on this page.");
@@ -158,9 +158,7 @@ async function runAutoFill() {
   console.log(`[Onbehalf] walker found ${fields.length} fields:`, fields);
 
   // Stage 2: send the inventory to the server. Claude returns one
-  // answer per field. (The "N" below is whatever the walker found on
-  // THIS particular form — dynamic, not hard-coded.)
-  setLoadingText(`Sending all ${fields.length} fields on this form to Claude…`);
+  // answer per field. Loading text stays as a quiet "Loading…".
   let resp;
   try {
     const res = await fetch("https://onbehalfai.vercel.app/api/extension/auto-fill", {
@@ -186,7 +184,6 @@ async function runAutoFill() {
   console.log(`[Onbehalf] Claude returned ${answers.length} answers (cost $${cost.toFixed(4)}):`, answers);
 
   // Stage 3: hand the answers to the executor to apply via DOM.
-  setLoadingText(`Filling ${answers.filter((a) => a.action !== "skip").length} fields…`);
   const execResp = await tellTab(tab, {
     type: "EXECUTE_ANSWERS",
     answers,
